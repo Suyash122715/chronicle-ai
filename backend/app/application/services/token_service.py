@@ -1,15 +1,9 @@
-"""Token Service placeholder for JWT access and refresh token management."""
+"""Token service interface re-export for application use cases.
 
+Use cases depend on TokenServiceInterface, not on JWTTokenService directly,
+keeping the Application layer decoupled from the concrete JWT implementation.
+"""
 
-class TokenService:
-    """Service for encoding, decoding, and verifying JWT tokens."""
+from app.domain.interfaces.token_service import TokenServiceInterface, TokenPayload
 
-    def create_access_token(self, subject: str) -> str:
-        """Creates a JWT access token for a given user subject."""
-        # TODO: Implement JWT encoding in Phase 2.
-        raise NotImplementedError("TokenService not implemented yet.")
-
-    def verify_token(self, token: str) -> str:
-        """Verifies JWT token signature and returns subject user ID."""
-        # TODO: Implement JWT verification in Phase 2.
-        raise NotImplementedError("TokenService not implemented yet.")
+__all__ = ["TokenServiceInterface", "TokenPayload"]
