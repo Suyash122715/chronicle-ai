@@ -29,7 +29,18 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    # TODO: Add JWT_REFRESH_TOKEN_EXPIRE_DAYS when refresh tokens are implemented in Phase 2.3
+    # Artifact & File Storage Configuration
+    STORAGE_DIR: str = "storage/uploads"
+    MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB limit
+    ALLOWED_MIME_TYPES: list[str] = [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "text/plain",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]
 
 
 settings = Settings()

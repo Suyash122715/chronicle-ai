@@ -1,10 +1,16 @@
-"""Process Artifact Job placeholder."""
+"""Process Artifact Job wrapper."""
+
+from uuid import UUID
+
+from app.application.artifacts.process.process_artifact_use_case import ProcessArtifactUseCase
 
 
 class ProcessArtifactJob:
-    """Orchestrates asynchronous multi-stage processing of uploaded artifacts."""
+    """Orchestrates asynchronous processing of uploaded artifacts."""
 
-    async def execute(self, job_id: str, artifact_id: str) -> None:
-        """Executes background pipeline steps (OCR -> Classification -> Entity Extraction -> Summary -> Relationships -> Vector Embedding)."""
-        # TODO: Implement asynchronous job worker pipeline in Phase 4.
-        raise NotImplementedError("ProcessArtifactJob not implemented yet.")
+    def __init__(self, process_artifact_use_case: ProcessArtifactUseCase) -> None:
+        self._process_artifact_use_case = process_artifact_use_case
+
+    async def execute(self, artifact_id: UUID) -> None:
+        """Executes background artifact processing."""
+        await self._process_artifact_use_case.execute(artifact_id)

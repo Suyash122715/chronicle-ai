@@ -3,9 +3,15 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.domain.exceptions.base import DomainException, EntityNotFoundError, DomainValidationError
-from app.domain.exceptions.user_exceptions import UserAlreadyExistsError
+from app.domain.exceptions.artifact_exceptions import (
+    ArtifactNotFoundError,
+    FileTooLargeError,
+    StorageError,
+    UnsupportedMediaTypeError,
+)
 from app.domain.exceptions.auth_exceptions import InvalidCredentialsError, InvalidTokenError
+from app.domain.exceptions.base import DomainException, DomainValidationError, EntityNotFoundError
+from app.domain.exceptions.user_exceptions import UserAlreadyExistsError
 from app.infrastructure.logging.logger import get_logger
 
 logger = get_logger("chronicle_ai.error_handler")
@@ -16,11 +22,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidCredentialsError)
     async def invalid_credentials_handler(request: Request, exc: InvalidCredentialsError) -> JSONResponse:
-        """Handles invalid login credentials (HTTP 401 Unauthorized).
-
-        Returns a generic message that does not reveal whether the email or
-        password was wrong, preventing user-enumeration attacks.
-        """
+        """Handles invalid login credentials (HTTP 401 Unauthorized)."""
         logger.warning("Failed login attempt on %s %s", request.method, request.url.path)
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,6 +46,42 @@ def register_error_handlers(app: FastAPI) -> None:
         logger.warning("Duplicate user registration attempt on %s %s: %s", request.method, request.url.path, exc.message)
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(ArtifactNotFoundError)
+    async def artifact_not_found_handler(request: Request, exc: ArtifactNotFoundError) -> JSONResponse:
+        """Handles artifact lookup / ownership failures (HTTP 404 Not Found)."""
+        logger.warning("Artifact not found on %s %s: %s", request.method, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(FileTooLargeError)
+    async def file_too_large_handler(request: Request, exc: FileTooLargeError) -> JSONResponse:
+        """Handles file size limit exceedance (HTTP 400 Bad Request)."""
+        logger.warning("File too large on %s %s: %s", request.method, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(UnsupportedMediaTypeError)
+    async def unsupported_media_type_handler(request: Request, exc: UnsupportedMediaTypeError) -> JSONResponse:
+        """Handles unsupported upload media types (HTTP 415 Unsupported Media Type)."""
+        logger.warning("Unsupported media type on %s %s: %s", request.method, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(StorageError)
+    async def storage_error_handler(request: Request, exc: StorageError) -> JSONResponse:
+        """Handles internal file storage operation failures (HTTP 500 Internal Server Error)."""
+        logger.error("Storage error on %s %s: %s", request.method, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": exc.message},
         )
 

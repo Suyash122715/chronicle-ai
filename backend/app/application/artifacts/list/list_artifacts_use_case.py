@@ -1,10 +1,17 @@
-"""List Artifacts Use Case placeholder."""
+"""List Artifacts Use Case implementation."""
+
+from uuid import UUID
+
+from app.domain.entities.artifact import Artifact
+from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 
 
 class ListArtifactsUseCase:
-    """Use Case for listing user artifacts with pagination."""
+    """Application use case for retrieving all artifacts owned by a specific user."""
 
-    async def execute(self, user_id: str, page: int = 1, limit: int = 20) -> None:
-        """Executes artifact listing workflow."""
-        # TODO: Implement paginated listing logic in Phase 3.
-        raise NotImplementedError("ListArtifactsUseCase not implemented yet.")
+    def __init__(self, artifact_repository: ArtifactRepositoryInterface) -> None:
+        self._artifact_repository = artifact_repository
+
+    async def execute(self, user_id: UUID) -> list[Artifact]:
+        """Retrieves all artifacts for the specified user ID."""
+        return await self._artifact_repository.get_by_user_id(user_id)
