@@ -1,0 +1,1 @@
+"""Artifact application capabilities package."""

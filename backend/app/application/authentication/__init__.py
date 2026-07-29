@@ -1,0 +1,1 @@
+"""Authentication application capabilities package."""
