@@ -6,6 +6,8 @@ import uuid
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from app.domain.value_objects.document_type import DocumentType
+from app.domain.value_objects.classification_result import ConfidenceLevel
 
 from app.domain.entities.artifact import Artifact, ProcessingStatus
 from app.infrastructure.db.base import Base
@@ -41,6 +43,11 @@ class ArtifactModel(Base):
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Classification fields (nullable)
+    document_type: Mapped[str | None] = mapped_column(String(64), nullable=True, default="Unknown")
+    classification_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True, default="LOW")
+    classifier_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -69,6 +76,11 @@ class ArtifactModel(Base):
             retry_count=self.retry_count,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            # Classification fields
+            document_type=DocumentType.from_str(self.document_type) if self.document_type else DocumentType.unknown(),
+            classification_confidence=ConfidenceLevel(self.classification_confidence) if self.classification_confidence else ConfidenceLevel.LOW,
+            classifier_version=self.classifier_version,
+            classified_at=self.classified_at,
         )
 
     @classmethod
@@ -88,4 +100,9 @@ class ArtifactModel(Base):
             retry_count=artifact.retry_count,
             created_at=artifact.created_at,
             updated_at=artifact.updated_at,
+            # Classification fields
+            document_type=artifact.document_type.value if isinstance(artifact.document_type, DocumentType) else str(artifact.document_type),
+            classification_confidence=artifact.classification_confidence.value if isinstance(artifact.classification_confidence, ConfidenceLevel) else str(artifact.classification_confidence),
+            classifier_version=artifact.classifier_version,
+            classified_at=artifact.classified_at,
         )

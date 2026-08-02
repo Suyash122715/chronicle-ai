@@ -10,6 +10,8 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Backend foundation with FastAPI health, authentication, and artifact workflows
+- Immutable provenance value object for AI-derived domain values
 - Repository structure
 - Documentation architecture
 - Project Manifest

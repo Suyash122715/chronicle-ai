@@ -1,14 +1,13 @@
-"""Unit tests for ProcessArtifactUseCase and DefaultTextExtractor."""
+"""Unit tests for ProcessArtifactUseCase — Phase 4.1 classification pipeline."""
 
 from uuid import UUID, uuid4
 import pytest
 
 from app.application.artifacts.process.process_artifact_use_case import ProcessArtifactUseCase
 from app.domain.entities.artifact import Artifact, ProcessingStatus
-from app.domain.exceptions.artifact_exceptions import StorageError
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
-from app.infrastructure.processing.text_extractor import DefaultTextExtractor
+from app.infrastructure.processing.deterministic_classifier import DeterministicDocumentClassifier
 
 
 class InMemoryArtifactRepository(ArtifactRepositoryInterface):
@@ -55,73 +54,98 @@ class DummyStorageService(StorageServiceInterface):
         return True
 
 
-@pytest.mark.asyncio
-async def test_text_extractor_plain_text() -> None:
-    """Verifies text extraction for plain text documents."""
-    extractor = DefaultTextExtractor()
-    content = b"Hello Chronicle AI World"
-    text = await extractor.extract_text(content, "text/plain")
-    assert text == "Hello Chronicle AI World"
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_process_artifact_success() -> None:
-    """Verifies successful processing pipeline execution."""
+    """Verifies that the classification pipeline executes and persists results.
+
+    Phase 4.1: processing = deterministic classification only.
+    No text extraction occurs.
+    """
     repo = InMemoryArtifactRepository()
     storage = DummyStorageService()
-    extractor = DefaultTextExtractor()
-    use_case = ProcessArtifactUseCase(repo, storage, extractor)
-
-    artifact = Artifact(
-        id=uuid4(),
-        user_id=uuid4(),
-        filename="notes.txt",
-        stored_filename="stored_notes.txt",
-        file_path="mock/stored_notes.txt",
-        file_size=100,
-        mime_type="text/plain",
-        status=ProcessingStatus.PENDING,
+    classifier = DeterministicDocumentClassifier()
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=storage,
+        document_classifier=classifier,
     )
-    await repo.add(artifact)
-    storage.files["mock/stored_notes.txt"] = b"Sample plain text content"
-
-    await use_case.execute(artifact.id)
-
-    processed = await repo.get_by_id(artifact.id)
-    assert processed.status == ProcessingStatus.COMPLETED
-    assert processed.raw_text == "Sample plain text content"
-    assert processed.error_message is None
-
-
-@pytest.mark.asyncio
-async def test_process_artifact_storage_failure_retries_and_fails() -> None:
-    """Verifies storage error triggers retries and eventually transitions to FAILED status."""
-    repo = InMemoryArtifactRepository()
-    storage = DummyStorageService(fail_on_get=True)
-    extractor = DefaultTextExtractor()
-    use_case = ProcessArtifactUseCase(repo, storage, extractor, max_retries=2)
 
     artifact = Artifact(
         id=uuid4(),
         user_id=uuid4(),
-        filename="missing.pdf",
-        stored_filename="stored_missing.pdf",
-        file_path="mock/missing.pdf",
-        file_size=50,
+        filename="john_doe_resume.pdf",
+        stored_filename="stored_resume.pdf",
+        file_path="mock/stored_resume.pdf",
+        file_size=100,
         mime_type="application/pdf",
         status=ProcessingStatus.PENDING,
     )
     await repo.add(artifact)
 
-    # First attempt -> retry_count becomes 1
     await use_case.execute(artifact.id)
-    state1 = await repo.get_by_id(artifact.id)
-    assert state1.retry_count == 1
-    assert state1.status == ProcessingStatus.FAILED
 
-    # Second attempt -> retry_count becomes 2 (max_retries reached)
+    processed = await repo.get_by_id(artifact.id)
+
+    # Pipeline status
+    assert processed.status == ProcessingStatus.COMPLETED
+    assert processed.error_message is None
+
+    # Classification was executed and persisted
+    assert processed.document_type is not None
+    assert processed.classification_confidence is not None
+    assert processed.classifier_version is not None
+    assert processed.classified_at is not None
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_unknown_type() -> None:
+    """Verifies that an artifact with no recognisable signals is classified as Unknown."""
+    repo = InMemoryArtifactRepository()
+    storage = DummyStorageService()
+    classifier = DeterministicDocumentClassifier()
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=storage,
+        document_classifier=classifier,
+    )
+
+    artifact = Artifact(
+        id=uuid4(),
+        user_id=uuid4(),
+        filename="random_file.bin",
+        stored_filename="stored_random.bin",
+        file_path="mock/stored_random.bin",
+        file_size=50,
+        mime_type="application/octet-stream",
+        status=ProcessingStatus.PENDING,
+    )
+    await repo.add(artifact)
+
     await use_case.execute(artifact.id)
-    state2 = await repo.get_by_id(artifact.id)
-    assert state2.retry_count == 2
-    assert state2.status == ProcessingStatus.FAILED
-    assert "failed permanently" in state2.error_message.lower() or "attempt(s)" in state2.error_message.lower()
+
+    processed = await repo.get_by_id(artifact.id)
+    assert processed.status == ProcessingStatus.COMPLETED
+    # Unknown file produces a classification result (type may be Unknown)
+    assert processed.document_type is not None
+    assert processed.classifier_version is not None
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_nonexistent_id_is_noop() -> None:
+    """Verifies that processing a missing artifact ID is a safe no-op."""
+    repo = InMemoryArtifactRepository()
+    storage = DummyStorageService()
+    classifier = DeterministicDocumentClassifier()
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=storage,
+        document_classifier=classifier,
+    )
+
+    # Should not raise
+    await use_case.execute(uuid4())

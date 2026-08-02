@@ -4,6 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.value_objects.document_type import DocumentType
+from app.domain.value_objects.classification_result import ConfidenceLevel
+
 from app.domain.entities.artifact import Artifact
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.infrastructure.db.models.artifact_model import ArtifactModel
@@ -55,6 +58,11 @@ class SQLAlchemyArtifactRepository(ArtifactRepositoryInterface):
             model.error_message = artifact.error_message
             model.retry_count = artifact.retry_count
             model.updated_at = artifact.updated_at
+            # Classification fields (nullable)
+            model.document_type = artifact.document_type.value if isinstance(artifact.document_type, DocumentType) else str(artifact.document_type)
+            model.classification_confidence = artifact.classification_confidence.value if isinstance(artifact.classification_confidence, ConfidenceLevel) else str(artifact.classification_confidence)
+            model.classifier_version = artifact.classifier_version
+            model.classified_at = artifact.classified_at
 
         await self._session.flush()
         await self._session.refresh(model)

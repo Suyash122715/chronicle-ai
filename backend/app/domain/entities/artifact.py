@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from enum import Enum
 import uuid
 
+from app.domain.value_objects.document_type import DocumentType
+from app.domain.value_objects.classification_result import ConfidenceLevel
+
 
 class ProcessingStatus(str, Enum):
     """Artifact processing pipeline status enumeration."""
@@ -35,3 +38,8 @@ class Artifact:
     retry_count: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Classification fields (nullable, backward compatible)
+    document_type: DocumentType = field(default_factory=DocumentType.unknown)
+    classification_confidence: ConfidenceLevel = field(default_factory=lambda: ConfidenceLevel.LOW)
+    classifier_version: str | None = None
+    classified_at: datetime | None = None

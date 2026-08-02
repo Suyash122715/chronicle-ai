@@ -43,7 +43,7 @@ Foundation
 
 Status
 
-⬜ Pending
+🟨 In Progress
 
 Objective
 

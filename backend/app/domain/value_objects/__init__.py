@@ -1,4 +1,13 @@
-"""Domain value objects package.
+"""Domain value objects package."""
 
-TODO: Value objects representing immutable attributes without explicit identity (e.g. EmailAddress, FileMetadata, EmbeddingVector) will be defined here.
-"""
+from app.domain.value_objects.classification_result import ClassificationResult, ConfidenceLevel
+from app.domain.value_objects.document_type import DocumentType, DocumentTypeEnum
+from app.domain.value_objects.provenance import Provenance
+
+__all__ = [
+    "ClassificationResult",
+    "ConfidenceLevel",
+    "DocumentType",
+    "DocumentTypeEnum",
+    "Provenance",
+]
