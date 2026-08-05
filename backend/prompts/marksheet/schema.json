@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MarksheetExtractionSchema",
+  "type": "object",
+  "properties": {
+    "institution": { "type": "string" },
+    "gpa": { "type": "string" },
+    "_provenance": { "type": "object" }
+  },
+  "required": ["_provenance"]
+}

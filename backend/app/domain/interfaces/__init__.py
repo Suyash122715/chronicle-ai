@@ -1,5 +1,11 @@
-"""Domain interfaces package.
+"""Domain interfaces package."""
 
-TODO: Abstract interface definitions and repository contracts (e.g. ArtifactRepositoryInterface, UserRepositoryInterface) will be defined here.
-The domain layer defines abstract contracts, and the infrastructure layer provides concrete implementations.
-"""
+from app.domain.interfaces.artifact_extractor import ArtifactExtractorInterface
+from app.domain.interfaces.llm_provider import LLMProviderInterface
+from app.domain.interfaces.prompt_repository import PromptRepositoryInterface
+
+__all__ = [
+    "ArtifactExtractorInterface",
+    "LLMProviderInterface",
+    "PromptRepositoryInterface",
+]

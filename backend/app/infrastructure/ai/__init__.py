@@ -1,5 +1,12 @@
-"""Infrastructure AI providers package.
+"""AI infrastructure package."""
 
-TODO: AI providers (GeminiProvider, ChromaVectorProvider) will be implemented here in Phase 5.
-AI services handle text extraction, entity recognition, embeddings, and relationship extraction.
-"""
+from app.infrastructure.ai.base_extractor import BaseLLMExtractor
+from app.infrastructure.ai.gemini_provider import GeminiLLMProvider, GeminiProviderError
+from app.infrastructure.ai.prompt_repository import FileSystemPromptRepository
+
+__all__ = [
+    "BaseLLMExtractor",
+    "FileSystemPromptRepository",
+    "GeminiLLMProvider",
+    "GeminiProviderError",
+]

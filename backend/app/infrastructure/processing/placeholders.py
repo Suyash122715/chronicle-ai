@@ -1,15 +1,15 @@
-"""Placeholder extractor implementations for Phase 4.1."""
+"""Placeholder extractor implementations for Phase 4.1 / Phase 4.2."""
 
 from datetime import datetime, timezone
 
 from app.domain.entities.artifact import Artifact
 from app.domain.interfaces.artifact_extractor import ArtifactExtractorInterface
 from app.domain.value_objects.classification_result import ClassificationResult
-from app.domain.value_objects.extraction_result import ExtractionResult
+from app.domain.value_objects.extraction_result import ExtractionResult, ExtractionStatus
 
 
 class BasePlaceholderExtractor(ArtifactExtractorInterface):
-    """Base class for Phase 4.1 placeholder extractors."""
+    """Base class for placeholder extractors."""
 
     extractor_name: str = "BasePlaceholderExtractor"
 
@@ -18,14 +18,24 @@ class BasePlaceholderExtractor(ArtifactExtractorInterface):
         artifact: Artifact,
         classification_result: ClassificationResult,
     ) -> ExtractionResult:
-        """Returns placeholder extraction result indicating feature is not implemented in Phase 4.1."""
+        """Returns placeholder canonical extraction result."""
+        now = datetime.now(timezone.utc)
         return ExtractionResult(
             artifact_id=artifact.id,
-            extracted_data={},
-            extractor_name=self.extractor_name,
-            extracted_at=datetime.now(timezone.utc),
-            is_placeholder=True,
-            message="Not implemented in Phase 4.1",
+            document_type=classification_result.document_type,
+            structured_data={},
+            provenance={},
+            warnings=["Placeholder extractor; not implemented in Phase 4.1"],
+            confidence=classification_result.confidence_level,
+            extractor_version=self.extractor_name,
+            prompt_version="v0",
+            llm_metadata={
+                "is_placeholder": True,
+                "message": "Not implemented in Phase 4.1",
+            },
+            started_at=now,
+            completed_at=now,
+            status=ExtractionStatus.SUCCESS,
         )
 
 

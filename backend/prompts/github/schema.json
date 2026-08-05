@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GitHubRepositoryExtractionSchema",
+  "type": "object",
+  "properties": {
+    "repository_name": { "type": "string" },
+    "primary_language": { "type": "string" },
+    "_provenance": { "type": "object" }
+  },
+  "required": ["_provenance"]
+}

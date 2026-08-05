@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ResumeExtractionSchema",
+  "type": "object",
+  "properties": {
+    "personal_info": {
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "work_experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "company": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      }
+    },
+    "_provenance": { "type": "object" }
+  },
+  "required": ["skills", "_provenance"]
+}
