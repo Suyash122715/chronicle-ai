@@ -23,7 +23,9 @@ from app.domain.interfaces.text_extractor import TextExtractorInterface
 from app.domain.interfaces.token_service import TokenPayload, TokenServiceInterface
 from app.domain.interfaces.user_repository import UserRepositoryInterface
 from app.domain.interfaces.document_classifier import DocumentClassifierInterface
+from app.domain.services.extractor_factory import ExtractorFactory
 from app.domain.services.extractor_registry import ExtractorRegistry
+from app.application.services.extractor_execution_service import ExtractorExecutionService
 from app.domain.value_objects.document_type import DocumentTypeEnum
 from app.infrastructure.db.session import get_async_session
 from app.infrastructure.jobs.fastapi_background_job_service import FastAPIBackgroundJobService
@@ -96,6 +98,20 @@ def get_extractor_registry() -> ExtractorRegistry:
     registry.register(DocumentTypeEnum.GITHUB_REPOSITORY, GitHubRepositoryExtractor)
     registry.register(DocumentTypeEnum.UNKNOWN, UnknownExtractor)
     return registry
+
+
+def get_extractor_factory(
+    registry: ExtractorRegistry = Depends(get_extractor_registry),
+) -> ExtractorFactory:
+    """Returns ExtractorFactory initialized with ExtractorRegistry."""
+    return ExtractorFactory(registry)
+
+
+def get_extractor_execution_service(
+    factory: ExtractorFactory = Depends(get_extractor_factory),
+) -> ExtractorExecutionService:
+    """Returns ExtractorExecutionService initialized with ExtractorFactory."""
+    return ExtractorExecutionService(factory)
 
 
 def get_background_job_service(

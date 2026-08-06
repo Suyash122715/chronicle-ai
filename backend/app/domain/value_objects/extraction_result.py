@@ -17,6 +17,8 @@ class ExtractionStatus(str, Enum):
     SUCCESS = "SUCCESS"
     PARTIAL = "PARTIAL"
     FAILED = "FAILED"
+    NOT_SUPPORTED = "NOT_SUPPORTED"
+    SKIPPED = "SKIPPED"
 
 
 @dataclass(frozen=True)
