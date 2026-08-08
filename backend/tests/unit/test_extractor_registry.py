@@ -10,13 +10,14 @@ from app.domain.value_objects.classification_result import ClassificationResult,
 from app.domain.value_objects.document_type import DocumentType, DocumentTypeEnum
 from app.domain.value_objects.provenance import Provenance
 from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.internship_letter_extractor import InternshipLetterExtractor
 from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
 from app.infrastructure.ai.resume_extractor import ResumeExtractor
 from app.infrastructure.processing.placeholders import (
     BasePlaceholderExtractor,
     CertificateExtractor as PlaceholderCertificateExtractor,
     GitHubRepositoryExtractor,
-    InternshipLetterExtractor,
+    InternshipLetterExtractor as PlaceholderInternshipLetterExtractor,
     MarksheetExtractor as PlaceholderMarksheetExtractor,
     PortfolioExtractor,
     ProjectReportExtractor,
@@ -29,15 +30,17 @@ class TestExtractorRegistry:
     """Test suite for ExtractorRegistry resolution and registration logic."""
 
     def test_registration_and_lookup_all_types(self) -> None:
-        """Verifies lookup resolves registered placeholder extractor classes for all document types."""
+        """Verifies lookup resolves registered concrete extractor classes for all document types."""
         registry = ExtractorRegistry()
         registry.register(DocumentType.resume(), ResumeExtractor)
         registry.register(DocumentType.certificate(), CertificateExtractor)
         registry.register(DocumentType.marksheet(), MarksheetExtractor)
+        registry.register(DocumentType.internship_letter(), InternshipLetterExtractor)
 
         assert registry.get_extractor(DocumentType.resume()) == ResumeExtractor
         assert registry.get_extractor(DocumentType.certificate()) == CertificateExtractor
         assert registry.get_extractor(DocumentType.marksheet()) == MarksheetExtractor
+        assert registry.get_extractor(DocumentType.internship_letter()) == InternshipLetterExtractor
 
     def test_resolve_fallback_to_default_extractor(self) -> None:
         """Verifies resolve() falls back to default_extractor when type is unregistered."""
@@ -57,11 +60,13 @@ class TestExtractorRegistry:
         registry.register(DocumentTypeEnum.RESUME, ResumeExtractor)
         registry.register(DocumentTypeEnum.CERTIFICATE, CertificateExtractor)
         registry.register(DocumentTypeEnum.MARKSHEET, MarksheetExtractor)
+        registry.register(DocumentTypeEnum.INTERNSHIP_LETTER, InternshipLetterExtractor)
 
         assert registry.has_extractor(DocumentType.resume()) is True
         assert registry.has_extractor(DocumentType.certificate()) is True
         assert registry.has_extractor(DocumentType.marksheet()) is True
-        assert registry.has_extractor(DocumentType.internship_letter()) is False
+        assert registry.has_extractor(DocumentType.internship_letter()) is True
+        assert registry.has_extractor(DocumentType.project_report()) is False
 
     @pytest.mark.asyncio
     async def test_placeholder_extractor_execution_returns_phase4_1_message(self) -> None:

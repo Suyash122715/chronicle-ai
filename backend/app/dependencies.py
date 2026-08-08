@@ -31,11 +31,11 @@ from app.infrastructure.db.session import get_async_session
 from app.infrastructure.jobs.fastapi_background_job_service import FastAPIBackgroundJobService
 from app.infrastructure.processing.deterministic_classifier import DeterministicDocumentClassifier
 from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.internship_letter_extractor import InternshipLetterExtractor
 from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
 from app.infrastructure.ai.resume_extractor import ResumeExtractor
 from app.infrastructure.processing.placeholders import (
     GitHubRepositoryExtractor,
-    InternshipLetterExtractor,
     PortfolioExtractor,
     ProjectReportExtractor,
     UnknownExtractor,
