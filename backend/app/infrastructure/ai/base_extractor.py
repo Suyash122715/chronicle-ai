@@ -126,6 +126,30 @@ class BaseLLMExtractor(ArtifactExtractorInterface):
                 prompt_version=bundle.prompt_version,
             )
 
+            if llm_response.provider == "disabled" or llm_response.finish_reason == "NO_API_KEY":
+                latency_ms = (time.monotonic() - start_time) * 1000
+                return ExtractionResult(
+                    artifact_id=artifact.id,
+                    document_type=classification_result.document_type,
+                    structured_data={},
+                    provenance={},
+                    warnings=["LLM extraction skipped: GEMINI_API_KEY is not configured."],
+                    confidence=ConfidenceLevel.LOW,
+                    extractor_version=EXTRACTOR_VERSION,
+                    prompt_version=bundle.prompt_version,
+                    llm_metadata={
+                        "provider": llm_response.provider,
+                        "model": llm_response.model,
+                        "finish_reason": llm_response.finish_reason,
+                        "latency_ms": round(latency_ms, 2),
+                        **llm_response.metadata,
+                    },
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    status=ExtractionStatus.SKIPPED,
+                    error_message="GEMINI_API_KEY is not configured.",
+                )
+
             structured_data, field_provenance, warnings = self.post_process(
                 parsed_json=llm_response.parsed_json,
                 artifact=artifact,

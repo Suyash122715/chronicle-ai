@@ -3,9 +3,35 @@
   "title": "MarksheetExtractionSchema",
   "type": "object",
   "properties": {
-    "institution": { "type": "string" },
-    "gpa": { "type": "string" },
+    "academic_info": {
+      "type": "object",
+      "properties": {
+        "institution": { "type": "string" },
+        "student_name": { "type": "string" },
+        "roll_number": { "type": "string" },
+        "program": { "type": "string" },
+        "term": { "type": "string" },
+        "cgpa": { "type": "string" },
+        "percentage": { "type": "string" },
+        "result_status": { "type": "string" },
+        "issue_date": { "type": "string" }
+      }
+    },
+    "subjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "subject_name": { "type": "string" },
+          "subject_code": { "type": "string" },
+          "marks_obtained": { "type": "string" },
+          "max_marks": { "type": "string" },
+          "grade": { "type": "string" },
+          "credits": { "type": "string" }
+        }
+      }
+    },
     "_provenance": { "type": "object" }
   },
-  "required": ["_provenance"]
+  "required": ["academic_info", "_provenance"]
 }

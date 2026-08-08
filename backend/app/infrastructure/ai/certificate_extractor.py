@@ -1,65 +1,29 @@
-"""ResumeExtractor — specialized LLM extractor for resume documents."""
+"""CertificateExtractor — specialized LLM extractor for certificate documents."""
 
 from typing import Any
 
-from app.config import settings
 from app.domain.entities.artifact import Artifact
 from app.domain.interfaces.llm_provider import LLMProviderInterface
 from app.domain.interfaces.prompt_repository import PromptRepositoryInterface
 from app.domain.services.prompt_renderer import PromptRenderer
 from app.domain.value_objects.classification_result import ClassificationResult
-from app.domain.value_objects.llm_response import LLMResponse
 from app.domain.value_objects.provenance import Provenance
 from app.infrastructure.ai.base_extractor import BaseLLMExtractor
-from app.infrastructure.ai.gemini_provider import GeminiLLMProvider
 from app.infrastructure.ai.prompt_repository import FileSystemPromptRepository
+from app.infrastructure.ai.resume_extractor import get_default_llm_provider
 
 
-class DisabledLLMProvider(LLMProviderInterface):
-    """Fallback LLM provider used when no API key is configured."""
-
-    async def generate_structured(
-        self,
-        prompt: str,
-        response_schema: dict[str, Any],
-        prompt_version: str = "v1",
-        **kwargs: Any,
-    ) -> LLMResponse:
-        return LLMResponse(
-            raw_response="",
-            parsed_json=None,
-            token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            latency=0.0,
-            provider="disabled",
-            model="none",
-            finish_reason="NO_API_KEY",
-            prompt_version=prompt_version,
-            metadata={"warning": "GEMINI_API_KEY is not configured."},
-        )
-
-
-def get_default_llm_provider() -> LLMProviderInterface:
-    """Returns configured GeminiLLMProvider or DisabledLLMProvider if no API key present."""
-    if settings.GEMINI_API_KEY:
-        return GeminiLLMProvider(
-            api_key=settings.GEMINI_API_KEY,
-            model=settings.GEMINI_MODEL,
-            timeout_seconds=settings.GEMINI_TIMEOUT_SECONDS,
-        )
-    return DisabledLLMProvider()
-
-
-class ResumeExtractor(BaseLLMExtractor):
-    """LLM-based extractor for resume artifacts.
+class CertificateExtractor(BaseLLMExtractor):
+    """LLM-based extractor for certificate artifacts.
 
     Extends BaseLLMExtractor and implements document-type-specific logic:
-    - Target prompt/schema directory: 'resume' (backend/prompts/resume/)
+    - Target prompt/schema directory: 'certificate' (backend/prompts/certificate/)
     - prepare_variables: Supplies document_text, document_type, output_schema
-    - post_process: Standardizes skills, education, experience, projects, certifications,
-                    extracts provenance, and records warnings for missing fields.
+    - post_process: Standardizes certificate_info, skills, extracts provenance,
+                    and records warnings for missing fields.
     """
 
-    DOCUMENT_TYPE_NAME: str = "resume"
+    DOCUMENT_TYPE_NAME: str = "certificate"
 
     def __init__(
         self,
@@ -78,7 +42,7 @@ class ResumeExtractor(BaseLLMExtractor):
         )
 
     def get_document_type_name(self) -> str:
-        """Returns prompt folder key for resume extraction."""
+        """Returns prompt folder key for certificate extraction."""
         return self.DOCUMENT_TYPE_NAME
 
     def prepare_variables(
@@ -106,12 +70,16 @@ class ResumeExtractor(BaseLLMExtractor):
         """Converts raw LLM parsed JSON into standardized structured_data, provenance, and warnings."""
         warnings: list[str] = []
         structured_data: dict[str, Any] = {
-            "personal_info": {},
+            "certificate_info": {
+                "title": "",
+                "issuer": "",
+                "recipient_name": "",
+                "issue_date": "",
+                "expiry_date": "",
+                "credential_id": "",
+                "verification_url": "",
+            },
             "skills": [],
-            "education": [],
-            "experience": [],
-            "projects": [],
-            "certifications": [],
         }
         provenance_map: dict[str, Provenance] = {}
 
@@ -119,35 +87,28 @@ class ResumeExtractor(BaseLLMExtractor):
             warnings.append("LLM returned no parsed JSON content.")
             return structured_data, provenance_map, warnings
 
-        # Map personal_info / contact_info
-        if "personal_info" in parsed_json and isinstance(parsed_json["personal_info"], dict):
-            structured_data["personal_info"] = parsed_json["personal_info"]
-        elif "contact_info" in parsed_json and isinstance(parsed_json["contact_info"], dict):
-            structured_data["personal_info"] = parsed_json["contact_info"]
+        # Map certificate_info
+        if "certificate_info" in parsed_json and isinstance(parsed_json["certificate_info"], dict):
+            info = parsed_json["certificate_info"]
+            structured_data["certificate_info"].update(info)
+        else:
+            # Check root-level fallback fields if LLM returned flat structure
+            for key in ["title", "issuer", "recipient_name", "issue_date", "expiry_date", "credential_id", "verification_url"]:
+                if key in parsed_json:
+                    structured_data["certificate_info"][key] = str(parsed_json[key])
+
+        # Validate essential certificate info fields
+        cert_info = structured_data["certificate_info"]
+        if not cert_info.get("title"):
+            warnings.append("Missing or empty certificate 'title' field.")
+        if not cert_info.get("issuer"):
+            warnings.append("Missing or empty certificate 'issuer' field.")
 
         # Map skills
         if "skills" in parsed_json and isinstance(parsed_json["skills"], list):
             structured_data["skills"] = parsed_json["skills"]
-        else:
-            warnings.append("Missing or invalid 'skills' field in LLM response.")
-
-        # Map education
-        if "education" in parsed_json and isinstance(parsed_json["education"], list):
-            structured_data["education"] = parsed_json["education"]
-
-        # Map experience (check both 'experience' and 'work_experience')
-        if "experience" in parsed_json and isinstance(parsed_json["experience"], list):
-            structured_data["experience"] = parsed_json["experience"]
-        elif "work_experience" in parsed_json and isinstance(parsed_json["work_experience"], list):
-            structured_data["experience"] = parsed_json["work_experience"]
-
-        # Map projects
-        if "projects" in parsed_json and isinstance(parsed_json["projects"], list):
-            structured_data["projects"] = parsed_json["projects"]
-
-        # Map certifications
-        if "certifications" in parsed_json and isinstance(parsed_json["certifications"], list):
-            structured_data["certifications"] = parsed_json["certifications"]
+        elif "skills_demonstrated" in parsed_json and isinstance(parsed_json["skills_demonstrated"], list):
+            structured_data["skills"] = parsed_json["skills_demonstrated"]
 
         # Map provenance from _provenance object if present
         raw_provenance = parsed_json.get("_provenance")

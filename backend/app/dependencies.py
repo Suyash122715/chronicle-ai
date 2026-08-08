@@ -30,14 +30,14 @@ from app.domain.value_objects.document_type import DocumentTypeEnum
 from app.infrastructure.db.session import get_async_session
 from app.infrastructure.jobs.fastapi_background_job_service import FastAPIBackgroundJobService
 from app.infrastructure.processing.deterministic_classifier import DeterministicDocumentClassifier
+from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
+from app.infrastructure.ai.resume_extractor import ResumeExtractor
 from app.infrastructure.processing.placeholders import (
-    CertificateExtractor,
     GitHubRepositoryExtractor,
     InternshipLetterExtractor,
-    MarksheetExtractor,
     PortfolioExtractor,
     ProjectReportExtractor,
-    ResumeExtractor,
     UnknownExtractor,
 )
 from app.infrastructure.processing.text_extractor import DefaultTextExtractor
@@ -187,12 +187,14 @@ def get_process_artifact_use_case(
     artifact_repository: ArtifactRepositoryInterface = Depends(get_artifact_repository),
     storage_service: StorageServiceInterface = Depends(get_storage_service),
     document_classifier: DocumentClassifierInterface = Depends(get_document_classifier),
+    extractor_execution_service: ExtractorExecutionService = Depends(get_extractor_execution_service),
 ) -> ProcessArtifactUseCase:
     """Injects dependencies into ProcessArtifactUseCase."""
     return ProcessArtifactUseCase(
         artifact_repository=artifact_repository,
         storage_service=storage_service,
         document_classifier=document_classifier,
+        extractor_execution_service=extractor_execution_service,
     )
 
 

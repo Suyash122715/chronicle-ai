@@ -3,10 +3,23 @@
   "title": "CertificateExtractionSchema",
   "type": "object",
   "properties": {
-    "title": { "type": "string" },
-    "issuer": { "type": "string" },
-    "issue_date": { "type": "string" },
+    "certificate_info": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "issuer": { "type": "string" },
+        "recipient_name": { "type": "string" },
+        "issue_date": { "type": "string" },
+        "expiry_date": { "type": "string" },
+        "credential_id": { "type": "string" },
+        "verification_url": { "type": "string" }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "_provenance": { "type": "object" }
   },
-  "required": ["title", "issuer", "_provenance"]
+  "required": ["certificate_info", "_provenance"]
 }

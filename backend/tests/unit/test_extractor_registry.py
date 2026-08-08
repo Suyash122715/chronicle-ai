@@ -9,15 +9,18 @@ from app.domain.services.extractor_registry import ExtractorRegistry
 from app.domain.value_objects.classification_result import ClassificationResult, ConfidenceLevel
 from app.domain.value_objects.document_type import DocumentType, DocumentTypeEnum
 from app.domain.value_objects.provenance import Provenance
+from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
+from app.infrastructure.ai.resume_extractor import ResumeExtractor
 from app.infrastructure.processing.placeholders import (
     BasePlaceholderExtractor,
-    CertificateExtractor,
+    CertificateExtractor as PlaceholderCertificateExtractor,
     GitHubRepositoryExtractor,
     InternshipLetterExtractor,
-    MarksheetExtractor,
+    MarksheetExtractor as PlaceholderMarksheetExtractor,
     PortfolioExtractor,
     ProjectReportExtractor,
-    ResumeExtractor,
+    ResumeExtractor as PlaceholderResumeExtractor,
     UnknownExtractor,
 )
 
@@ -52,14 +55,18 @@ class TestExtractorRegistry:
         """Verifies has_extractor returns True for registered types and False otherwise."""
         registry = ExtractorRegistry()
         registry.register(DocumentTypeEnum.RESUME, ResumeExtractor)
+        registry.register(DocumentTypeEnum.CERTIFICATE, CertificateExtractor)
+        registry.register(DocumentTypeEnum.MARKSHEET, MarksheetExtractor)
 
         assert registry.has_extractor(DocumentType.resume()) is True
-        assert registry.has_extractor(DocumentType.certificate()) is False
+        assert registry.has_extractor(DocumentType.certificate()) is True
+        assert registry.has_extractor(DocumentType.marksheet()) is True
+        assert registry.has_extractor(DocumentType.internship_letter()) is False
 
     @pytest.mark.asyncio
     async def test_placeholder_extractor_execution_returns_phase4_1_message(self) -> None:
         """Verifies placeholder extractors return placeholder message without performing extraction."""
-        extractor = ResumeExtractor()
+        extractor = PlaceholderResumeExtractor()
         artifact_id = uuid.uuid4()
         artifact = Artifact(
             id=artifact_id,
@@ -79,10 +86,10 @@ class TestExtractorRegistry:
         )
 
         result = await extractor.extract(artifact, classification)
-        assert result.is_placeholder is True
-        assert result.message == "Not implemented in Phase 4.1"
-        assert result.extractor_name == "ResumeExtractor"
-        assert result.extracted_data == {}
+        assert result.llm_metadata["is_placeholder"] is True
+        assert result.llm_metadata["message"] == "Not implemented in Phase 4.1"
+        assert result.extractor_version == "ResumeExtractor"
+        assert result.structured_data == {}
 
     def test_dependency_injection_provider(self) -> None:
         """Verifies FastAPI dependency injection provider returns pre-configured ExtractorRegistry."""

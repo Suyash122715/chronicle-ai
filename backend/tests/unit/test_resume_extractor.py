@@ -8,8 +8,10 @@ import pytest
 
 from app.domain.entities.artifact import Artifact
 from app.domain.interfaces.llm_provider import LLMProviderInterface
+from app.domain.services.extractor_factory import ExtractorFactory
+from app.domain.services.extractor_registry import ExtractorRegistry
 from app.domain.value_objects.classification_result import ClassificationResult, ConfidenceLevel
-from app.domain.value_objects.document_type import DocumentType
+from app.domain.value_objects.document_type import DocumentType, DocumentTypeEnum
 from app.domain.value_objects.extraction_result import ExtractionResult, ExtractionStatus
 from app.domain.value_objects.llm_response import LLMResponse
 from app.domain.value_objects.provenance import Provenance
@@ -132,6 +134,7 @@ async def test_resume_extractor_prompt_loading_and_variables() -> None:
     result = await extractor.extract(artifact, classification)
 
     assert result.status == ExtractionStatus.SUCCESS
+    assert result.prompt_version == "v1"
     assert mock_provider.captured_prompt is not None
     assert "John Smith - Full Stack Developer" in mock_provider.captured_prompt
     assert mock_provider.captured_schema is not None
@@ -228,3 +231,35 @@ async def test_resume_extractor_null_llm_response() -> None:
     assert result.structured_data["skills"] == []
     assert len(result.warnings) == 1
     assert "LLM returned no parsed JSON content" in result.warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_resume_extractor_exception_handling() -> None:
+    """Verifies that an LLM provider exception is caught and returns FAILED ExtractionResult."""
+    artifact = make_artifact()
+    classification = make_classification(artifact)
+    repo = FileSystemPromptRepository()
+    mock_provider = MockLLMProvider(raise_error=True)
+
+    extractor = ResumeExtractor(prompt_repository=repo, llm_provider=mock_provider)
+    result = await extractor.extract(artifact, classification)
+
+    assert result.status == ExtractionStatus.FAILED
+    assert "Extraction failed" in result.warnings[0]
+    assert "LLM provider mock error" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_resume_extractor_registration_in_registry() -> None:
+    """Verifies ResumeExtractor registration in ExtractorRegistry and resolution via ExtractorFactory."""
+    registry = ExtractorRegistry()
+    mock_provider = MockLLMProvider()
+    repo = FileSystemPromptRepository()
+    extractor_instance = ResumeExtractor(prompt_repository=repo, llm_provider=mock_provider)
+
+    registry.register(DocumentTypeEnum.RESUME, extractor_instance)
+    factory = ExtractorFactory(registry)
+
+    resolved = factory.get_extractor(DocumentType.resume())
+    assert resolved is not None
+    assert resolved == extractor_instance

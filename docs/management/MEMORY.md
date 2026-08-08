@@ -4,13 +4,13 @@ AI Platform Development
 
 Current Phase
 
-Phase 4.1
+Phase 4.5 Batch 3
 
-Deterministic Document Classification.
+Marksheet Extractor & Pipeline Integration
 
 Current Sprint
 
-Deterministic Classification Architecture
+Document Extraction Pipeline Integration
 
 Completed
 
@@ -20,11 +20,16 @@ JWT
 Artifact Upload
 Artifact Processing
 Processing Pipeline
+Deterministic Document Classification (Phase 4.1)
+Extraction Framework Architecture (Phase 4.5 Batch 1)
+Resume Extractor & Pipeline Integration (Phase 4.5 Batch 1)
+Certificate Extractor (Phase 4.5 Batch 2)
+Marksheet Extractor (Phase 4.5 Batch 3)
 
 In Progress
 
-Deterministic Document Classification
+Concrete Document Extractors (Batch 4 Remaining Extractor Batches)
 
 Next Task
 
-Implement deterministic document classification.
+Implement Internship Letter Extractor (Batch 4).
