@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.artifacts.delete.delete_artifact_use_case import DeleteArtifactUseCase
 from app.application.artifacts.get.get_artifact_use_case import GetArtifactUseCase
+from app.application.artifacts.get_extraction.get_extraction_use_case import GetExtractionUseCase
 from app.application.artifacts.list.list_artifacts_use_case import ListArtifactsUseCase
 from app.application.artifacts.process.process_artifact_use_case import ProcessArtifactUseCase
 from app.application.artifacts.upload.upload_artifact_use_case import UploadArtifactUseCase
@@ -18,6 +19,7 @@ from app.domain.entities.user import User
 from app.domain.exceptions.auth_exceptions import InvalidTokenError
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.background_job_service import BackgroundJobServiceInterface
+from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.domain.interfaces.text_extractor import TextExtractorInterface
 from app.domain.interfaces.token_service import TokenPayload, TokenServiceInterface
@@ -31,17 +33,16 @@ from app.infrastructure.db.session import get_async_session
 from app.infrastructure.jobs.fastapi_background_job_service import FastAPIBackgroundJobService
 from app.infrastructure.processing.deterministic_classifier import DeterministicDocumentClassifier
 from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.github_repository_extractor import GitHubRepositoryExtractor
 from app.infrastructure.ai.internship_letter_extractor import InternshipLetterExtractor
 from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
+from app.infrastructure.ai.portfolio_extractor import PortfolioExtractor
+from app.infrastructure.ai.project_report_extractor import ProjectReportExtractor
 from app.infrastructure.ai.resume_extractor import ResumeExtractor
-from app.infrastructure.processing.placeholders import (
-    GitHubRepositoryExtractor,
-    PortfolioExtractor,
-    ProjectReportExtractor,
-    UnknownExtractor,
-)
+from app.infrastructure.processing.placeholders import UnknownExtractor
 from app.infrastructure.processing.text_extractor import DefaultTextExtractor
 from app.infrastructure.repositories.artifact_repository import SQLAlchemyArtifactRepository
+from app.infrastructure.repositories.extraction_repository import SQLAlchemyExtractionRepository
 from app.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 from app.infrastructure.security.jwt_token_service import JWTTokenService
 from app.infrastructure.security.password_service import PasswordService
@@ -69,6 +70,13 @@ def get_artifact_repository(
 ) -> ArtifactRepositoryInterface:
     """Returns concrete SQLAlchemy ArtifactRepository bound to the current request session."""
     return SQLAlchemyArtifactRepository(session)
+
+
+def get_extraction_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> ExtractionRepositoryInterface:
+    """Returns concrete SQLAlchemy ExtractionRepository bound to the current request session."""
+    return SQLAlchemyExtractionRepository(session)
 
 
 def get_storage_service() -> StorageServiceInterface:
@@ -188,6 +196,7 @@ def get_process_artifact_use_case(
     storage_service: StorageServiceInterface = Depends(get_storage_service),
     document_classifier: DocumentClassifierInterface = Depends(get_document_classifier),
     extractor_execution_service: ExtractorExecutionService = Depends(get_extractor_execution_service),
+    extraction_repository: ExtractionRepositoryInterface = Depends(get_extraction_repository),
 ) -> ProcessArtifactUseCase:
     """Injects dependencies into ProcessArtifactUseCase."""
     return ProcessArtifactUseCase(
@@ -195,6 +204,7 @@ def get_process_artifact_use_case(
         storage_service=storage_service,
         document_classifier=document_classifier,
         extractor_execution_service=extractor_execution_service,
+        extraction_repository=extraction_repository,
     )
 
 
@@ -225,6 +235,17 @@ def get_get_artifact_use_case(
 ) -> GetArtifactUseCase:
     """Injects dependencies into GetArtifactUseCase."""
     return GetArtifactUseCase(artifact_repository=artifact_repository)
+
+
+def get_get_extraction_use_case(
+    artifact_repository: ArtifactRepositoryInterface = Depends(get_artifact_repository),
+    extraction_repository: ExtractionRepositoryInterface = Depends(get_extraction_repository),
+) -> GetExtractionUseCase:
+    """Injects dependencies into GetExtractionUseCase."""
+    return GetExtractionUseCase(
+        artifact_repository=artifact_repository,
+        extraction_repository=extraction_repository,
+    )
 
 
 def get_delete_artifact_use_case(

@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, statu
 
 from app.application.artifacts.delete.delete_artifact_use_case import DeleteArtifactUseCase
 from app.application.artifacts.get.get_artifact_use_case import GetArtifactUseCase
+from app.application.artifacts.get_extraction.get_extraction_use_case import GetExtractionUseCase
 from app.application.artifacts.list.list_artifacts_use_case import ListArtifactsUseCase
 from app.application.artifacts.upload.upload_artifact_use_case import UploadArtifactUseCase
 from app.dependencies import (
@@ -12,6 +13,7 @@ from app.dependencies import (
     get_current_user,
     get_delete_artifact_use_case,
     get_get_artifact_use_case,
+    get_get_extraction_use_case,
     get_list_artifacts_use_case,
     get_process_artifact_use_case,
     get_storage_service,
@@ -19,6 +21,7 @@ from app.dependencies import (
 from app.domain.entities.user import User
 from app.infrastructure.jobs.fastapi_background_job_service import FastAPIBackgroundJobService
 from app.presentation.schemas.artifact_response import ArtifactResponse, UploadArtifactResponse
+from app.presentation.schemas.extraction_response import ExtractionResponse
 
 artifact_router = APIRouter(prefix="/artifacts", tags=["Artifacts"])
 
@@ -100,6 +103,24 @@ async def get_artifact(
     """Handles GET /api/v1/artifacts/{artifact_id}."""
     artifact = await use_case.execute(user_id=current_user.id, artifact_id=artifact_id)
     return ArtifactResponse.model_validate(artifact)
+
+
+@artifact_router.get(
+    "/{artifact_id}/extraction",
+    status_code=status.HTTP_200_OK,
+    response_model=ExtractionResponse,
+    summary="Get Artifact Extraction Result",
+    description="Retrieves the extraction result for a specific artifact owned by the authenticated user.",
+)
+async def get_artifact_extraction(
+    artifact_id: UUID,
+    current_user: User = Depends(get_current_user),
+    use_case: GetExtractionUseCase = Depends(get_get_extraction_use_case),
+) -> ExtractionResponse:
+    """Handles GET /api/v1/artifacts/{artifact_id}/extraction."""
+    extraction = await use_case.execute(user_id=current_user.id, artifact_id=artifact_id)
+    return ExtractionResponse.from_domain(extraction)
+
 
 
 @artifact_router.delete(

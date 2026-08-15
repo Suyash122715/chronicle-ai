@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.domain.exceptions.artifact_exceptions import (
     ArtifactNotFoundError,
+    ExtractionNotFoundError,
     FileTooLargeError,
     StorageError,
     UnsupportedMediaTypeError,
@@ -53,6 +54,15 @@ def register_error_handlers(app: FastAPI) -> None:
     async def artifact_not_found_handler(request: Request, exc: ArtifactNotFoundError) -> JSONResponse:
         """Handles artifact lookup / ownership failures (HTTP 404 Not Found)."""
         logger.warning("Artifact not found on %s %s: %s", request.method, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(ExtractionNotFoundError)
+    async def extraction_not_found_handler(request: Request, exc: ExtractionNotFoundError) -> JSONResponse:
+        """Handles extraction lookup failures (HTTP 404 Not Found)."""
+        logger.warning("Extraction not found on %s %s: %s", request.method, request.url.path, exc.message)
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"detail": exc.message},

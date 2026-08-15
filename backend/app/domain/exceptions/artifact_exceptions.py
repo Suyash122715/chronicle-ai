@@ -29,3 +29,10 @@ class StorageError(DomainException):
 
     def __init__(self, message: str = "Storage operation failed.") -> None:
         super().__init__(message)
+
+
+class ExtractionNotFoundError(DomainException):
+    """Raised when an extraction result for an artifact is not found."""
+
+    def __init__(self, message: str = "Artifact extraction not found.") -> None:
+        super().__init__(message)

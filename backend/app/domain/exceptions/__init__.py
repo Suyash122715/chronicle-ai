@@ -13,6 +13,7 @@ from app.domain.exceptions.user_exceptions import (
 from app.domain.exceptions.auth_exceptions import InvalidCredentialsError, InvalidTokenError
 from app.domain.exceptions.artifact_exceptions import (
     ArtifactNotFoundError,
+    ExtractionNotFoundError,
     FileTooLargeError,
     UnsupportedMediaTypeError,
     StorageError,
@@ -28,6 +29,7 @@ __all__ = [
     "InvalidCredentialsError",
     "InvalidTokenError",
     "ArtifactNotFoundError",
+    "ExtractionNotFoundError",
     "FileTooLargeError",
     "UnsupportedMediaTypeError",
     "StorageError",
