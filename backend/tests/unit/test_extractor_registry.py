@@ -10,17 +10,20 @@ from app.domain.value_objects.classification_result import ClassificationResult,
 from app.domain.value_objects.document_type import DocumentType, DocumentTypeEnum
 from app.domain.value_objects.provenance import Provenance
 from app.infrastructure.ai.certificate_extractor import CertificateExtractor
+from app.infrastructure.ai.github_repository_extractor import GitHubRepositoryExtractor
 from app.infrastructure.ai.internship_letter_extractor import InternshipLetterExtractor
 from app.infrastructure.ai.marksheet_extractor import MarksheetExtractor
+from app.infrastructure.ai.portfolio_extractor import PortfolioExtractor
+from app.infrastructure.ai.project_report_extractor import ProjectReportExtractor
 from app.infrastructure.ai.resume_extractor import ResumeExtractor
 from app.infrastructure.processing.placeholders import (
     BasePlaceholderExtractor,
     CertificateExtractor as PlaceholderCertificateExtractor,
-    GitHubRepositoryExtractor,
+    GitHubRepositoryExtractor as PlaceholderGitHubRepositoryExtractor,
     InternshipLetterExtractor as PlaceholderInternshipLetterExtractor,
     MarksheetExtractor as PlaceholderMarksheetExtractor,
-    PortfolioExtractor,
-    ProjectReportExtractor,
+    PortfolioExtractor as PlaceholderPortfolioExtractor,
+    ProjectReportExtractor as PlaceholderProjectReportExtractor,
     ResumeExtractor as PlaceholderResumeExtractor,
     UnknownExtractor,
 )

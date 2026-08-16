@@ -7,6 +7,7 @@ from app.application.services.extractor_execution_service import ExtractorExecut
 from app.domain.entities.artifact import ProcessingStatus
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.document_classifier import DocumentClassifierInterface
+from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.infrastructure.logging.logger import get_logger
 
@@ -21,7 +22,8 @@ class ProcessArtifactUseCase:
     2. Performs deterministic classification.
     3. Persists classification metadata.
     4. Executes document extraction via ExtractorExecutionService.
-    5. Updates status to COMPLETED.
+    5. Persists extraction result (all statuses) via ExtractionRepositoryInterface.
+    6. Updates status to COMPLETED.
     """
 
     def __init__(
@@ -30,12 +32,14 @@ class ProcessArtifactUseCase:
         storage_service: StorageServiceInterface,
         document_classifier: DocumentClassifierInterface,
         extractor_execution_service: ExtractorExecutionService | None = None,
+        extraction_repository: ExtractionRepositoryInterface | None = None,
         max_retries: int = 3,
     ) -> None:
         self._artifact_repository = artifact_repository
         self._storage_service = storage_service
         self._document_classifier = document_classifier
         self._extractor_execution_service = extractor_execution_service
+        self._extraction_repository = extraction_repository
         self._max_retries = max_retries
 
     async def execute(self, artifact_id: UUID) -> None:
@@ -80,6 +84,22 @@ class ProcessArtifactUseCase:
                         extraction_result.status.value if hasattr(extraction_result.status, "value") else extraction_result.status,
                         extraction_result.warnings,
                     )
+
+                    # 5. Persist extraction result for ALL statuses
+                    if self._extraction_repository is not None:
+                        try:
+                            await self._extraction_repository.save(extraction_result)
+                            logger.info(
+                                "Extraction result persisted for artifact %s (status=%s)",
+                                artifact_id,
+                                extraction_result.status.value if hasattr(extraction_result.status, "value") else extraction_result.status,
+                            )
+                        except Exception as persist_exc:  # noqa: BLE001
+                            logger.error(
+                                "Extraction persistence failed for artifact %s (non-fatal): %s",
+                                artifact_id,
+                                str(persist_exc),
+                            )
                 except Exception as exc:  # noqa: BLE001
                     logger.error("Extraction execution failed for artifact %s (non-fatal): %s", artifact_id, str(exc))
 
