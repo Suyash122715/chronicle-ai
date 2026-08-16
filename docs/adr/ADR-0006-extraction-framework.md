@@ -243,6 +243,7 @@ ExtractionResult contains:
 - started_at
 - completed_at
 - status
+- error_message
 
 This standardizes downstream processing.
 
@@ -315,9 +316,6 @@ The following enhancements build upon this architecture:
 - Streaming responses
 - Structured output validation
 - Automatic prompt experimentation
-- Resume-specific extractor
-- Certificate-specific extractor
-- Project-specific extractor
 - Embedding generation
 - Knowledge graph construction
 - Timeline generation

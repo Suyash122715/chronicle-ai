@@ -6,6 +6,21 @@ This project follows Semantic Versioning.
 
 ---
 
+## [0.5.0] - Complete Extraction Pipeline with Retrieval API (Phase 4.5 Complete)
+
+### Added
+
+- All 7 concrete document extractors implemented: `ResumeExtractor`, `CertificateExtractor`, `MarksheetExtractor`, `InternshipLetterExtractor`, `ProjectReportExtractor`, `PortfolioExtractor`, and `GitHubRepositoryExtractor`.
+- Full `ExtractionResult` status enum: `SUCCESS`, `PARTIAL`, `FAILED`, `NOT_SUPPORTED`, `SKIPPED`.
+- DB persistence for extraction results via `artifact_extractions` table (Alembic migration 004), `ArtifactExtractionModel`, `ExtractionRepositoryInterface`, and `SQLAlchemyExtractionRepository`.
+- Pipeline persistence wired end-to-end through `ProcessArtifactUseCase`.
+- Extraction retrieval API: `GET /api/v1/artifacts/{artifact_id}/extraction` — returns `structured_data`, `provenance`, `warnings`, `confidence`, `status`, `extractor_version`, `prompt_version`, `llm_metadata`, `started_at`, `completed_at`, `error_message`.
+- Authentication and ownership protection enforced on the extraction endpoint.
+- Complete dependency injection wiring connecting `ExtractorRegistry`, `ExtractorFactory`, `ExtractorExecutionService`, and `ProcessArtifactUseCase`.
+- 187 backend tests passing with 2 pre-existing warnings.
+
+---
+
 ## [0.4.5] - Extraction Framework & Resume Extractor (Phase 4.5 Batch 2)
 
 ### Added
@@ -40,5 +55,5 @@ This project follows Semantic Versioning.
 
 ## Upcoming
 
-- Additional document extractors (Certificate, Marksheet, Internship, Project, Portfolio, GitHub)
+- Phase 5: Knowledge Graph architecture, entity models, domain relationships, and graph persistence
 - Frontend Foundation
