@@ -18,6 +18,10 @@ from app.domain.exceptions.artifact_exceptions import (
     UnsupportedMediaTypeError,
     StorageError,
 )
+from app.domain.exceptions.graph_exceptions import (
+    GraphEntityNotFoundError,
+    GraphRelationshipNotFoundError,
+)
 
 __all__ = [
     "DomainException",
@@ -33,4 +37,6 @@ __all__ = [
     "FileTooLargeError",
     "UnsupportedMediaTypeError",
     "StorageError",
+    "GraphEntityNotFoundError",
+    "GraphRelationshipNotFoundError",
 ]

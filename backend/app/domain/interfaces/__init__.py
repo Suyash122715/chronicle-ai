@@ -5,6 +5,7 @@ from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterfac
 from app.domain.interfaces.background_job_service import BackgroundJobServiceInterface
 from app.domain.interfaces.document_classifier import DocumentClassifierInterface
 from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
+from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
 from app.domain.interfaces.llm_provider import LLMProviderInterface
 from app.domain.interfaces.prompt_repository import PromptRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
@@ -18,6 +19,7 @@ __all__ = [
     "BackgroundJobServiceInterface",
     "DocumentClassifierInterface",
     "ExtractionRepositoryInterface",
+    "KnowledgeGraphRepositoryInterface",
     "LLMProviderInterface",
     "PromptRepositoryInterface",
     "StorageServiceInterface",

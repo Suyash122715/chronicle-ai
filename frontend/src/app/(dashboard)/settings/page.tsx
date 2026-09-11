@@ -1,5 +1,4 @@
-import React from "react";
-import { Sliders, Bell, Lock, Palette } from "lucide-react";
+import { Bell, Lock, Palette } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 
 export default function SettingsPage() {

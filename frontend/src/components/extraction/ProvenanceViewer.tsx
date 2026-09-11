@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { ProvenanceItem } from "@/types/extraction";
 import { ChevronDown, ChevronRight, FileSearch, Quote, ShieldCheck } from "lucide-react";
-import { clsx } from "clsx";
 
 interface ProvenanceViewerProps {
   provenance: Record<string, ProvenanceItem>;

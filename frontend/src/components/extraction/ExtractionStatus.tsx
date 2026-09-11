@@ -79,7 +79,7 @@ export function ExtractionStatus({
     }
   }
 
-  const modelName = llmMetadata?.model || llmMetadata?.provider || "Gemini 1.5 Flash";
+  const modelName = typeof llmMetadata?.model === "string" ? llmMetadata.model : null;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 space-y-4">
@@ -124,7 +124,9 @@ export function ExtractionStatus({
             <span className="text-slate-500 block text-[10px] uppercase font-semibold tracking-wider">
               Extractor
             </span>
-            <span className="font-mono text-slate-200">{extractorVersion}</span>
+            <span className="font-mono text-slate-200">
+              {extractorVersion} {modelName ? `(${modelName})` : ""}
+            </span>
           </div>
         </div>
 

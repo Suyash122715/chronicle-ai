@@ -7,7 +7,7 @@ import { formatFileSize } from "@/lib/utils/formatters";
 import { ApiError } from "@/types/api";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { UploadCloud, File, X, CheckCircle2 } from "lucide-react";
+import { UploadCloud, File, X } from "lucide-react";
 import { clsx } from "clsx";
 
 interface UploadDropzoneProps {
@@ -81,7 +81,7 @@ export function UploadDropzone({ onSuccess }: UploadDropzoneProps) {
       setSuccessMessage(res.message || "Artifact uploaded successfully.");
       setSelectedFile(null);
       if (onSuccess) onSuccess();
-    } catch (err) {
+    } catch {
       // Error is handled via mutation state or ApiError
     }
   };

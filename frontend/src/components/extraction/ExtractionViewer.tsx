@@ -17,7 +17,6 @@ import {
   MinusCircle,
   SkipForward,
 } from "lucide-react";
-import { clsx } from "clsx";
 
 interface ExtractionViewerProps {
   artifact: ArtifactResponse;
