@@ -3,11 +3,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.application.knowledge_graph.build_knowledge_graph_use_case import BuildKnowledgeGraphUseCase
 from app.application.services.extractor_execution_service import ExtractorExecutionService
 from app.domain.entities.artifact import ProcessingStatus
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.document_classifier import DocumentClassifierInterface
 from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
+from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.infrastructure.logging.logger import get_logger
 
@@ -23,7 +25,8 @@ class ProcessArtifactUseCase:
     3. Persists classification metadata.
     4. Executes document extraction via ExtractorExecutionService.
     5. Persists extraction result (all statuses) via ExtractionRepositoryInterface.
-    6. Updates status to COMPLETED.
+    6. Builds and persists Knowledge Graph candidates via KnowledgeGraphRepositoryInterface (non-fatal).
+    7. Updates status to COMPLETED.
     """
 
     def __init__(
@@ -33,6 +36,8 @@ class ProcessArtifactUseCase:
         document_classifier: DocumentClassifierInterface,
         extractor_execution_service: ExtractorExecutionService | None = None,
         extraction_repository: ExtractionRepositoryInterface | None = None,
+        knowledge_graph_repository: KnowledgeGraphRepositoryInterface | None = None,
+        build_knowledge_graph_use_case: BuildKnowledgeGraphUseCase | None = None,
         max_retries: int = 3,
     ) -> None:
         self._artifact_repository = artifact_repository
@@ -40,6 +45,8 @@ class ProcessArtifactUseCase:
         self._document_classifier = document_classifier
         self._extractor_execution_service = extractor_execution_service
         self._extraction_repository = extraction_repository
+        self._knowledge_graph_repository = knowledge_graph_repository
+        self._build_knowledge_graph_use_case = build_knowledge_graph_use_case
         self._max_retries = max_retries
 
     async def execute(self, artifact_id: UUID) -> None:
@@ -86,9 +93,10 @@ class ProcessArtifactUseCase:
                     )
 
                     # 5. Persist extraction result for ALL statuses
+                    saved_extraction = None
                     if self._extraction_repository is not None:
                         try:
-                            await self._extraction_repository.save(extraction_result)
+                            saved_extraction = await self._extraction_repository.save(extraction_result)
                             logger.info(
                                 "Extraction result persisted for artifact %s (status=%s)",
                                 artifact_id,
@@ -100,10 +108,44 @@ class ProcessArtifactUseCase:
                                 artifact_id,
                                 str(persist_exc),
                             )
+
+                    # 6. Build and persist Knowledge Graph candidates (non-fatal, after extraction persistence)
+                    if self._knowledge_graph_repository is not None and (
+                        saved_extraction is not None or self._extraction_repository is None
+                    ):
+                        try:
+                            graph_builder = self._build_knowledge_graph_use_case or BuildKnowledgeGraphUseCase()
+                            extraction_id = getattr(saved_extraction, "id", None) if saved_extraction else None
+                            candidates = graph_builder.execute(
+                                user_id=artifact.user_id,
+                                artifact_id=artifact.id,
+                                extraction_result=extraction_result,
+                                extraction_id=extraction_id,
+                            )
+                            if candidates.entities or candidates.relationships:
+                                await self._knowledge_graph_repository.persist_graph(
+                                    entities=candidates.entities,
+                                    relationships=candidates.relationships,
+                                    entity_provenance=candidates.entity_provenance,
+                                    relationship_provenance=candidates.relationship_provenance,
+                                )
+                                logger.info(
+                                    "Knowledge graph successfully persisted for artifact %s: %d entities, %d relationships",
+                                    artifact_id,
+                                    len(candidates.entities),
+                                    len(candidates.relationships),
+                                )
+                        except Exception as kg_exc:  # noqa: BLE001
+                            logger.error(
+                                "Knowledge graph generation/persistence failed for artifact %s (non-fatal): %s",
+                                artifact_id,
+                                str(kg_exc),
+                                exc_info=True,
+                            )
                 except Exception as exc:  # noqa: BLE001
                     logger.error("Extraction execution failed for artifact %s (non-fatal): %s", artifact_id, str(exc))
 
-            # 5. Mark COMPLETED
+            # 7. Mark COMPLETED
             artifact.status = ProcessingStatus.COMPLETED
             artifact.updated_at = datetime.now(timezone.utc)
             await self._artifact_repository.update(artifact)

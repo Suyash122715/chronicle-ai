@@ -5,10 +5,14 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.application.artifacts.process.process_artifact_use_case import ProcessArtifactUseCase
+from app.application.knowledge_graph.build_knowledge_graph_use_case import BuildKnowledgeGraphUseCase
+from app.application.knowledge_graph.extraction_graph_mapper import GraphCandidates
 from app.application.services.extractor_execution_service import ExtractorExecutionService
 from app.domain.entities.artifact import Artifact, ProcessingStatus
+from app.domain.entities.graph_entity import EntityType, GraphEntity
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
+from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.domain.value_objects.document_type import DocumentType
 from app.domain.value_objects.extraction_result import ExtractionResult, ExtractionStatus
@@ -506,3 +510,218 @@ async def test_extraction_repository_save_failure_is_non_fatal() -> None:
     # Classification fields must still be intact despite the persistence failure
     assert processed.document_type is not None
     assert processed.classified_at is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Batch 4B: Knowledge Graph Integration Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_builds_and_persists_knowledge_graph() -> None:
+    """Batch 4B: Verifies that KG builder and persist_graph are invoked when extraction succeeds."""
+    repo = InMemoryArtifactRepository()
+    extraction_repo = InMemoryExtractionRepository()
+    classifier = DeterministicDocumentClassifier()
+
+    artifact = _make_artifact("resume_kg_success.pdf")
+    await repo.add(artifact)
+
+    extraction_result = _make_extraction_result(artifact.id, ExtractionStatus.SUCCESS)
+    mock_extractor_service = MagicMock(spec=ExtractorExecutionService)
+    mock_extractor_service.execute = AsyncMock(return_value=extraction_result)
+
+    entity = GraphEntity(
+        id=uuid4(),
+        user_id=artifact.user_id,
+        name="Python",
+        canonical_name="python",
+        entity_type=EntityType.SKILL,
+    )
+    candidates = GraphCandidates(
+        entities=[entity],
+        relationships=[],
+        entity_provenance={entity.id: []},
+        relationship_provenance={},
+    )
+
+    mock_builder = MagicMock(spec=BuildKnowledgeGraphUseCase)
+    mock_builder.execute = MagicMock(return_value=candidates)
+
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+    mock_kg_repo.persist_graph = AsyncMock()
+
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=DummyStorageService(),
+        document_classifier=classifier,
+        extractor_execution_service=mock_extractor_service,
+        extraction_repository=extraction_repo,
+        knowledge_graph_repository=mock_kg_repo,
+        build_knowledge_graph_use_case=mock_builder,
+    )
+
+    await use_case.execute(artifact.id)
+
+    # Builder called with proper user_id, artifact_id, and extraction_result
+    mock_builder.execute.assert_called_once()
+    builder_kwargs = mock_builder.execute.call_args[1]
+    assert builder_kwargs["user_id"] == artifact.user_id
+    assert builder_kwargs["artifact_id"] == artifact.id
+    assert builder_kwargs["extraction_result"] == extraction_result
+
+    # Knowledge graph repo persist_graph called with candidates
+    mock_kg_repo.persist_graph.assert_called_once_with(
+        entities=candidates.entities,
+        relationships=candidates.relationships,
+        entity_provenance=candidates.entity_provenance,
+        relationship_provenance=candidates.relationship_provenance,
+    )
+
+    # Artifact marked COMPLETED
+    processed = await repo.get_by_id(artifact.id)
+    assert processed.status == ProcessingStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_knowledge_graph_failure_is_non_fatal() -> None:
+    """Batch 4B: Verifies that a failure during KG building or persistence does NOT fail artifact processing."""
+    repo = InMemoryArtifactRepository()
+    extraction_repo = InMemoryExtractionRepository()
+    classifier = DeterministicDocumentClassifier()
+
+    artifact = _make_artifact("resume_kg_fail.pdf")
+    await repo.add(artifact)
+
+    extraction_result = _make_extraction_result(artifact.id, ExtractionStatus.SUCCESS)
+    mock_extractor_service = MagicMock(spec=ExtractorExecutionService)
+    mock_extractor_service.execute = AsyncMock(return_value=extraction_result)
+
+    entity = GraphEntity(
+        id=uuid4(),
+        user_id=artifact.user_id,
+        name="Python",
+        canonical_name="python",
+        entity_type=EntityType.SKILL,
+    )
+    candidates = GraphCandidates(
+        entities=[entity],
+        relationships=[],
+        entity_provenance={entity.id: []},
+        relationship_provenance={},
+    )
+
+    mock_builder = MagicMock(spec=BuildKnowledgeGraphUseCase)
+    mock_builder.execute = MagicMock(return_value=candidates)
+
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+    mock_kg_repo.persist_graph = AsyncMock(side_effect=RuntimeError("Database failure during persist_graph"))
+
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=DummyStorageService(),
+        document_classifier=classifier,
+        extractor_execution_service=mock_extractor_service,
+        extraction_repository=extraction_repo,
+        knowledge_graph_repository=mock_kg_repo,
+        build_knowledge_graph_use_case=mock_builder,
+    )
+
+    # Must not raise
+    await use_case.execute(artifact.id)
+
+    # Extraction must remain persisted
+    assert extraction_repo.save_call_count == 1
+    persisted_extraction = await extraction_repo.get_by_artifact_id(artifact.id)
+    assert persisted_extraction is not None
+
+    # Pipeline status must be COMPLETED
+    processed = await repo.get_by_id(artifact.id)
+    assert processed.status == ProcessingStatus.COMPLETED
+    assert processed.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_empty_knowledge_graph_not_persisted() -> None:
+    """Batch 4B: Verifies that if no entities or relationships are extracted, persist_graph is not called."""
+    repo = InMemoryArtifactRepository()
+    extraction_repo = InMemoryExtractionRepository()
+    classifier = DeterministicDocumentClassifier()
+
+    artifact = _make_artifact("resume_kg_empty.pdf")
+    await repo.add(artifact)
+
+    extraction_result = _make_extraction_result(artifact.id, ExtractionStatus.SUCCESS)
+    mock_extractor_service = MagicMock(spec=ExtractorExecutionService)
+    mock_extractor_service.execute = AsyncMock(return_value=extraction_result)
+
+    empty_candidates = GraphCandidates(
+        entities=[],
+        relationships=[],
+        entity_provenance={},
+        relationship_provenance={},
+    )
+
+    mock_builder = MagicMock(spec=BuildKnowledgeGraphUseCase)
+    mock_builder.execute = MagicMock(return_value=empty_candidates)
+
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+    mock_kg_repo.persist_graph = AsyncMock()
+
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=DummyStorageService(),
+        document_classifier=classifier,
+        extractor_execution_service=mock_extractor_service,
+        extraction_repository=extraction_repo,
+        knowledge_graph_repository=mock_kg_repo,
+        build_knowledge_graph_use_case=mock_builder,
+    )
+
+    await use_case.execute(artifact.id)
+
+    mock_builder.execute.assert_called_once()
+    mock_kg_repo.persist_graph.assert_not_called()
+
+    processed = await repo.get_by_id(artifact.id)
+    assert processed.status == ProcessingStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_process_artifact_skips_knowledge_graph_when_extraction_persistence_fails() -> None:
+    """Batch 4B: Verifies that if extraction persistence fails, KG persistence is skipped."""
+    repo = InMemoryArtifactRepository()
+    failing_extraction_repo = MagicMock(spec=ExtractionRepositoryInterface)
+    failing_extraction_repo.save = AsyncMock(side_effect=RuntimeError("Extraction table crash"))
+    classifier = DeterministicDocumentClassifier()
+
+    artifact = _make_artifact("resume_kg_skip.pdf")
+    await repo.add(artifact)
+
+    extraction_result = _make_extraction_result(artifact.id, ExtractionStatus.SUCCESS)
+    mock_extractor_service = MagicMock(spec=ExtractorExecutionService)
+    mock_extractor_service.execute = AsyncMock(return_value=extraction_result)
+
+    mock_builder = MagicMock(spec=BuildKnowledgeGraphUseCase)
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+    mock_kg_repo.persist_graph = AsyncMock()
+
+    use_case = ProcessArtifactUseCase(
+        artifact_repository=repo,
+        storage_service=DummyStorageService(),
+        document_classifier=classifier,
+        extractor_execution_service=mock_extractor_service,
+        extraction_repository=failing_extraction_repo,
+        knowledge_graph_repository=mock_kg_repo,
+        build_knowledge_graph_use_case=mock_builder,
+    )
+
+    await use_case.execute(artifact.id)
+
+    # Builder and KG persist should be skipped because saved_extraction was None
+    mock_builder.execute.assert_not_called()
+    mock_kg_repo.persist_graph.assert_not_called()
+
+    processed = await repo.get_by_id(artifact.id)
+    assert processed.status == ProcessingStatus.COMPLETED
+

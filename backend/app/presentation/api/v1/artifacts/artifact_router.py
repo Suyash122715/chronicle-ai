@@ -8,6 +8,7 @@ from app.application.artifacts.get.get_artifact_use_case import GetArtifactUseCa
 from app.application.artifacts.get_extraction.get_extraction_use_case import GetExtractionUseCase
 from app.application.artifacts.list.list_artifacts_use_case import ListArtifactsUseCase
 from app.application.artifacts.upload.upload_artifact_use_case import UploadArtifactUseCase
+from app.application.jobs.process_artifact_job import ProcessArtifactJob
 from app.dependencies import (
     get_artifact_repository,
     get_current_user,
@@ -15,7 +16,7 @@ from app.dependencies import (
     get_get_artifact_use_case,
     get_get_extraction_use_case,
     get_list_artifacts_use_case,
-    get_process_artifact_use_case,
+    get_process_artifact_job,
     get_storage_service,
 )
 from app.domain.entities.user import User
@@ -39,7 +40,7 @@ async def upload_artifact(
     current_user: User = Depends(get_current_user),
     artifact_repository=Depends(get_artifact_repository),
     storage_service=Depends(get_storage_service),
-    process_use_case=Depends(get_process_artifact_use_case),
+    process_job: ProcessArtifactJob = Depends(get_process_artifact_job),
 ) -> UploadArtifactResponse:
     """Handles POST /api/v1/artifacts/upload.
 
@@ -56,7 +57,7 @@ async def upload_artifact(
         artifact_repository=artifact_repository,
         storage_service=storage_service,
         background_job_service=job_service,
-        process_task=process_use_case.execute,
+        process_task=process_job.execute,
     )
 
     artifact = await use_case.execute(

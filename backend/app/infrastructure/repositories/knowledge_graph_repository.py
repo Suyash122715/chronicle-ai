@@ -35,7 +35,7 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
         Resolves entity semantically by (user_id, entity_type, canonical_name).
         If existing entity is found, reuses its database ID and merges properties.
         """
-        try:
+        async with self._session.begin_nested():
             model = await self._upsert_entity_model(entity)
             if provenance is not None:
                 await self._upsert_entity_provenance(
@@ -46,9 +46,6 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             await self._session.flush()
             await self._session.refresh(model)
             return model.to_domain()
-        except Exception:
-            await self._session.rollback()
-            raise
 
     async def get_entity_by_id(self, entity_id: UUID) -> GraphEntity | None:
         """Retrieves a GraphEntity by its unique UUID."""
@@ -97,7 +94,7 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
         Enforces user ownership on source and target entities.
         Resolves relationship identity by (user_id, source_entity_id, target_entity_id, relationship_type).
         """
-        try:
+        async with self._session.begin_nested():
             await self._validate_relationship_endpoints(
                 user_id=relationship.user_id,
                 source_id=relationship.source_entity_id,
@@ -123,9 +120,6 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             await self._session.flush()
             await self._session.refresh(model)
             return model.to_domain()
-        except Exception:
-            await self._session.rollback()
-            raise
 
     async def get_relationship_by_id(self, relationship_id: UUID) -> GraphRelationship | None:
         """Retrieves a GraphRelationship by its unique UUID."""
@@ -253,7 +247,7 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
         entity_prov = entity_provenance or {}
         rel_prov = relationship_provenance or {}
 
-        try:
+        async with self._session.begin_nested():
             # Stage 1 & 2: resolve/upsert entities and map candidate UUID -> database UUID
             id_map: dict[UUID, UUID] = {}
             persisted_entities_map: dict[UUID, GraphEntityModel] = {}
@@ -316,15 +310,11 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
                         provenance=prov,
                     )
 
-            # Stage 6: Flush session
+            # Stage 6: Flush session to ensure all operations within savepoint are staged
             await self._session.flush()
 
             persisted_entities = [model.to_domain() for model in persisted_entities_map.values()]
             return persisted_entities, persisted_relationships
-
-        except Exception:
-            await self._session.rollback()
-            raise
 
     # -------------------------------------------------------------------------
     # Internal helpers for upsert and validation

@@ -15,11 +15,14 @@ from app.application.artifacts.process.process_artifact_use_case import ProcessA
 from app.application.artifacts.upload.upload_artifact_use_case import UploadArtifactUseCase
 from app.application.authentication.login.login_user_use_case import LoginUserUseCase
 from app.application.authentication.register.register_user_use_case import RegisterUserUseCase
+from app.application.jobs.process_artifact_job import ProcessArtifactJob
+from app.application.knowledge_graph.build_knowledge_graph_use_case import BuildKnowledgeGraphUseCase
 from app.domain.entities.user import User
 from app.domain.exceptions.auth_exceptions import InvalidTokenError
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.background_job_service import BackgroundJobServiceInterface
 from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
+from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.domain.interfaces.text_extractor import TextExtractorInterface
 from app.domain.interfaces.token_service import TokenPayload, TokenServiceInterface
@@ -43,6 +46,7 @@ from app.infrastructure.processing.placeholders import UnknownExtractor
 from app.infrastructure.processing.text_extractor import DefaultTextExtractor
 from app.infrastructure.repositories.artifact_repository import SQLAlchemyArtifactRepository
 from app.infrastructure.repositories.extraction_repository import SQLAlchemyExtractionRepository
+from app.infrastructure.repositories.knowledge_graph_repository import SQLAlchemyKnowledgeGraphRepository
 from app.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 from app.infrastructure.security.jwt_token_service import JWTTokenService
 from app.infrastructure.security.password_service import PasswordService
@@ -77,6 +81,18 @@ def get_extraction_repository(
 ) -> ExtractionRepositoryInterface:
     """Returns concrete SQLAlchemy ExtractionRepository bound to the current request session."""
     return SQLAlchemyExtractionRepository(session)
+
+
+def get_knowledge_graph_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> KnowledgeGraphRepositoryInterface:
+    """Returns concrete SQLAlchemy KnowledgeGraphRepository bound to the current request session."""
+    return SQLAlchemyKnowledgeGraphRepository(session)
+
+
+def get_build_knowledge_graph_use_case() -> BuildKnowledgeGraphUseCase:
+    """Returns BuildKnowledgeGraphUseCase instance."""
+    return BuildKnowledgeGraphUseCase()
 
 
 def get_storage_service() -> StorageServiceInterface:
@@ -197,6 +213,8 @@ def get_process_artifact_use_case(
     document_classifier: DocumentClassifierInterface = Depends(get_document_classifier),
     extractor_execution_service: ExtractorExecutionService = Depends(get_extractor_execution_service),
     extraction_repository: ExtractionRepositoryInterface = Depends(get_extraction_repository),
+    knowledge_graph_repository: KnowledgeGraphRepositoryInterface = Depends(get_knowledge_graph_repository),
+    build_knowledge_graph_use_case: BuildKnowledgeGraphUseCase = Depends(get_build_knowledge_graph_use_case),
 ) -> ProcessArtifactUseCase:
     """Injects dependencies into ProcessArtifactUseCase."""
     return ProcessArtifactUseCase(
@@ -205,6 +223,32 @@ def get_process_artifact_use_case(
         document_classifier=document_classifier,
         extractor_execution_service=extractor_execution_service,
         extraction_repository=extraction_repository,
+        knowledge_graph_repository=knowledge_graph_repository,
+        build_knowledge_graph_use_case=build_knowledge_graph_use_case,
+    )
+
+
+def get_process_artifact_job(
+    storage_service: StorageServiceInterface = Depends(get_storage_service),
+    document_classifier: DocumentClassifierInterface = Depends(get_document_classifier),
+    extractor_execution_service: ExtractorExecutionService = Depends(get_extractor_execution_service),
+    build_knowledge_graph_use_case: BuildKnowledgeGraphUseCase = Depends(get_build_knowledge_graph_use_case),
+    process_artifact_use_case: ProcessArtifactUseCase = Depends(get_process_artifact_use_case),
+    artifact_repository: ArtifactRepositoryInterface = Depends(get_artifact_repository),
+) -> ProcessArtifactJob:
+    """Returns ProcessArtifactJob managing background session creation and commit.
+
+    In production, opens a dedicated AsyncSession per invocation.
+    In test environments with overridden in-memory repositories, delegates
+    directly to process_artifact_use_case.
+    """
+    return ProcessArtifactJob(
+        storage_service=storage_service,
+        document_classifier=document_classifier,
+        extractor_execution_service=extractor_execution_service,
+        build_knowledge_graph_use_case=build_knowledge_graph_use_case,
+        process_artifact_use_case=process_artifact_use_case,
+        artifact_repository=artifact_repository,
     )
 
 
@@ -212,14 +256,14 @@ def get_upload_artifact_use_case(
     artifact_repository: ArtifactRepositoryInterface = Depends(get_artifact_repository),
     storage_service: StorageServiceInterface = Depends(get_storage_service),
     background_job_service: BackgroundJobServiceInterface = Depends(get_background_job_service),
-    process_artifact_use_case: ProcessArtifactUseCase = Depends(get_process_artifact_use_case),
+    process_artifact_job: ProcessArtifactJob = Depends(get_process_artifact_job),
 ) -> UploadArtifactUseCase:
     """Injects dependencies into UploadArtifactUseCase."""
     return UploadArtifactUseCase(
         artifact_repository=artifact_repository,
         storage_service=storage_service,
         background_job_service=background_job_service,
-        process_task=process_artifact_use_case.execute,
+        process_task=process_artifact_job.execute,
     )
 
 
