@@ -825,3 +825,82 @@ async def test_delete_provenance_by_artifact_id(db_session: AsyncSession) -> Non
 
     # Second delete returns False
     assert await repo.delete_provenance_by_artifact_id(artifact.id) is False
+
+
+# -----------------------------------------------------------------------------
+# Test 22: get_provenance_for_entities (batch lookup and user isolation)
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_get_provenance_for_entities_batch(db_session: AsyncSession) -> None:
+    """Verifies batch retrieval of entity provenance records with multi-provenance and isolation."""
+    user1 = await _create_test_user(db_session)
+    user2 = await _create_test_user(db_session)
+    art1 = await _create_test_artifact(db_session, user1.id)
+    art2 = await _create_test_artifact(db_session, user1.id)
+    repo = SQLAlchemyKnowledgeGraphRepository(db_session)
+
+    # Empty list returns empty dict
+    assert await repo.get_provenance_for_entities(user1.id, []) == {}
+
+    # Entity with multiple provenance citations
+    e1 = await repo.save_entity(
+        GraphEntity(user_id=user1.id, entity_type=EntityType.SKILL, name="Python"),
+        provenance=GraphProvenance(artifact_id=art1.id, confidence="HIGH", evidence_snippet="5 yrs Python"),
+    )
+    # Re-save with second artifact provenance
+    await repo.save_entity(
+        GraphEntity(user_id=user1.id, entity_type=EntityType.SKILL, name="Python"),
+        provenance=GraphProvenance(artifact_id=art2.id, confidence="MEDIUM", evidence_snippet="Python Certificate"),
+    )
+
+    # Entity without provenance
+    e2 = await repo.save_entity(
+        GraphEntity(user_id=user1.id, entity_type=EntityType.COMPANY, name="TechCorp")
+    )
+
+    prov_map = await repo.get_provenance_for_entities(user1.id, [e1.id, e2.id])
+    assert len(prov_map[e1.id]) == 2
+    assert {p.artifact_id for p in prov_map[e1.id]} == {art1.id, art2.id}
+    assert prov_map[e2.id] == []
+
+    # User 2 cannot access User 1's entity provenance
+    prov_map_user2 = await repo.get_provenance_for_entities(user2.id, [e1.id])
+    assert prov_map_user2[e1.id] == []
+
+
+# -----------------------------------------------------------------------------
+# Test 23: get_provenance_for_relationships (batch lookup and user isolation)
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_get_provenance_for_relationships_batch(db_session: AsyncSession) -> None:
+    """Verifies batch retrieval of relationship provenance records and isolation."""
+    user1 = await _create_test_user(db_session)
+    user2 = await _create_test_user(db_session)
+    art = await _create_test_artifact(db_session, user1.id)
+    repo = SQLAlchemyKnowledgeGraphRepository(db_session)
+
+    assert await repo.get_provenance_for_relationships(user1.id, []) == {}
+
+    e1 = await repo.save_entity(GraphEntity(user_id=user1.id, entity_type=EntityType.ROLE, name="Engineer"))
+    e2 = await repo.save_entity(GraphEntity(user_id=user1.id, entity_type=EntityType.COMPANY, name="Global Corp"))
+
+    prov = GraphProvenance(artifact_id=art.id, confidence="HIGH", evidence_snippet="Software Engineer at Global Corp")
+    rel = await repo.save_relationship(
+        GraphRelationship(
+            user_id=user1.id,
+            source_entity_id=e1.id,
+            target_entity_id=e2.id,
+            relationship_type=RelationshipType.WORKED_AT,
+        ),
+        provenance=prov,
+    )
+
+    prov_map = await repo.get_provenance_for_relationships(user1.id, [rel.id])
+    assert len(prov_map[rel.id]) == 1
+    assert prov_map[rel.id][0].artifact_id == art.id
+    assert prov_map[rel.id][0].evidence_snippet == "Software Engineer at Global Corp"
+
+    # User 2 cannot access User 1's relationship provenance
+    prov_map_user2 = await repo.get_provenance_for_relationships(user2.id, [rel.id])
+    assert prov_map_user2[rel.id] == []
+

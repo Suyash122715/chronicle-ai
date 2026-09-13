@@ -316,9 +316,48 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             persisted_entities = [model.to_domain() for model in persisted_entities_map.values()]
             return persisted_entities, persisted_relationships
 
+    async def get_provenance_for_entities(
+        self, user_id: UUID, entity_ids: list[UUID]
+    ) -> dict[UUID, list[GraphProvenance]]:
+        """Retrieves all provenance records for a given list of entity IDs belonging to the user."""
+        if not entity_ids:
+            return {}
+
+        stmt = select(EntityArtifactProvenanceModel).where(
+            EntityArtifactProvenanceModel.user_id == user_id,
+            EntityArtifactProvenanceModel.entity_id.in_(entity_ids),
+        )
+        res = await self._session.execute(stmt)
+        models = res.scalars().all()
+
+        provenance_map: dict[UUID, list[GraphProvenance]] = {eid: [] for eid in entity_ids}
+        for model in models:
+            provenance_map[model.entity_id].append(model.to_domain())
+        return provenance_map
+
+    async def get_provenance_for_relationships(
+        self, user_id: UUID, relationship_ids: list[UUID]
+    ) -> dict[UUID, list[GraphProvenance]]:
+        """Retrieves all provenance records for a given list of relationship IDs belonging to the user."""
+        if not relationship_ids:
+            return {}
+
+        stmt = select(RelationshipArtifactProvenanceModel).where(
+            RelationshipArtifactProvenanceModel.user_id == user_id,
+            RelationshipArtifactProvenanceModel.relationship_id.in_(relationship_ids),
+        )
+        res = await self._session.execute(stmt)
+        models = res.scalars().all()
+
+        provenance_map: dict[UUID, list[GraphProvenance]] = {rid: [] for rid in relationship_ids}
+        for model in models:
+            provenance_map[model.relationship_id].append(model.to_domain())
+        return provenance_map
+
     # -------------------------------------------------------------------------
     # Internal helpers for upsert and validation
     # -------------------------------------------------------------------------
+
 
     async def _upsert_entity_model(self, entity: GraphEntity) -> GraphEntityModel:
         """Resolves an entity semantically by (user_id, entity_type, canonical_name) and upserts."""

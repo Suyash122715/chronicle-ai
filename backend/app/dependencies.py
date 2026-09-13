@@ -17,12 +17,14 @@ from app.application.authentication.login.login_user_use_case import LoginUserUs
 from app.application.authentication.register.register_user_use_case import RegisterUserUseCase
 from app.application.jobs.process_artifact_job import ProcessArtifactJob
 from app.application.knowledge_graph.build_knowledge_graph_use_case import BuildKnowledgeGraphUseCase
+from app.application.knowledge_graph.get.get_knowledge_graph_use_case import GetKnowledgeGraphUseCase
 from app.domain.entities.user import User
 from app.domain.exceptions.auth_exceptions import InvalidTokenError
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.background_job_service import BackgroundJobServiceInterface
 from app.domain.interfaces.extraction_repository import ExtractionRepositoryInterface
 from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
+
 from app.domain.interfaces.storage_service import StorageServiceInterface
 from app.domain.interfaces.text_extractor import TextExtractorInterface
 from app.domain.interfaces.token_service import TokenPayload, TokenServiceInterface
@@ -301,3 +303,15 @@ def get_delete_artifact_use_case(
         artifact_repository=artifact_repository,
         storage_service=storage_service,
     )
+
+
+def get_get_knowledge_graph_use_case(
+    knowledge_graph_repository: KnowledgeGraphRepositoryInterface = Depends(get_knowledge_graph_repository),
+    artifact_repository: ArtifactRepositoryInterface = Depends(get_artifact_repository),
+) -> GetKnowledgeGraphUseCase:
+    """Injects dependencies into GetKnowledgeGraphUseCase."""
+    return GetKnowledgeGraphUseCase(
+        knowledge_graph_repository=knowledge_graph_repository,
+        artifact_repository=artifact_repository,
+    )
+

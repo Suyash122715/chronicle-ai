@@ -9,6 +9,7 @@ import { twMerge } from "tailwind-merge";
 import {
   LayoutDashboard,
   FileText,
+  Network,
   User,
   Settings,
   LogOut,
@@ -23,6 +24,7 @@ interface SidebarProps {
 export const NAVIGATION_ITEMS = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Documents", href: "/documents", icon: FileText },
+  { name: "Knowledge Graph", href: "/graph", icon: Network },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

@@ -84,3 +84,18 @@ class KnowledgeGraphRepositoryInterface(ABC):
         and guarantees transactional atomicity.
         """
         pass
+
+    @abstractmethod
+    async def get_provenance_for_entities(
+        self, user_id: UUID, entity_ids: list[UUID]
+    ) -> dict[UUID, list[GraphProvenance]]:
+        """Retrieves all provenance records for a given list of entity IDs belonging to the user."""
+        pass
+
+    @abstractmethod
+    async def get_provenance_for_relationships(
+        self, user_id: UUID, relationship_ids: list[UUID]
+    ) -> dict[UUID, list[GraphProvenance]]:
+        """Retrieves all provenance records for a given list of relationship IDs belonging to the user."""
+        pass
+

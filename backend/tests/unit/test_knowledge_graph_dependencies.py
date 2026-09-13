@@ -91,3 +91,21 @@ def test_get_process_artifact_job_returns_instance() -> None:
     assert job._artifact_repository is mock_artifact_repo
 
 
+def test_get_get_knowledge_graph_use_case_wires_dependencies() -> None:
+    """Verifies get_get_knowledge_graph_use_case properly injects kg_repository and artifact_repository."""
+    from app.application.knowledge_graph.get.get_knowledge_graph_use_case import GetKnowledgeGraphUseCase
+    from app.dependencies import get_get_knowledge_graph_use_case
+
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+    mock_artifact_repo = MagicMock(spec=ArtifactRepositoryInterface)
+
+    use_case = get_get_knowledge_graph_use_case(
+        knowledge_graph_repository=mock_kg_repo,
+        artifact_repository=mock_artifact_repo,
+    )
+    assert isinstance(use_case, GetKnowledgeGraphUseCase)
+    assert use_case._kg_repository is mock_kg_repo
+    assert use_case._artifact_repository is mock_artifact_repo
+
+
+
