@@ -62,7 +62,7 @@ def test_mapper_entity_and_relationship_types_resume() -> None:
 
     # Check relationship mapping
     rel_types = {r.relationship_type for r in candidates.relationships}
-    assert RelationshipType.HELD_ROLE in rel_types
+    assert RelationshipType.WORKED_AT in rel_types
     assert RelationshipType.USES in rel_types
 
     # Check user ownership
@@ -290,8 +290,8 @@ def test_build_knowledge_graph_use_case_validation() -> None:
 # =============================================================================
 
 
-def test_held_role_direction() -> None:
-    """Verifies HELD_ROLE edge runs ROLE --[HELD_ROLE]--> COMPANY, not the inverse."""
+def test_worked_at_direction() -> None:
+    """Verifies WORKED_AT edge runs ROLE --[WORKED_AT]--> COMPANY, not the inverse."""
     user_id = uuid4()
     artifact_id = uuid4()
 
@@ -314,13 +314,13 @@ def test_held_role_direction() -> None:
     role_entity = next(e for e in candidates.entities if e.entity_type == EntityType.ROLE)
     comp_entity = next(e for e in candidates.entities if e.entity_type == EntityType.COMPANY)
 
-    rel = next(r for r in candidates.relationships if r.relationship_type == RelationshipType.HELD_ROLE)
-    assert rel.source_entity_id == role_entity.id, "HELD_ROLE source must be ROLE"
-    assert rel.target_entity_id == comp_entity.id, "HELD_ROLE target must be COMPANY"
+    rel = next(r for r in candidates.relationships if r.relationship_type == RelationshipType.WORKED_AT)
+    assert rel.source_entity_id == role_entity.id, "WORKED_AT source must be ROLE"
+    assert rel.target_entity_id == comp_entity.id, "WORKED_AT target must be COMPANY"
 
 
-def test_held_role_direction_internship_info() -> None:
-    """Verifies HELD_ROLE edge direction is correct for the internship_info mapping path."""
+def test_worked_at_direction_internship_info() -> None:
+    """Verifies WORKED_AT edge direction is correct for the internship_info mapping path."""
     user_id = uuid4()
     artifact_id = uuid4()
 
@@ -344,9 +344,9 @@ def test_held_role_direction_internship_info() -> None:
     role_entity = next(e for e in candidates.entities if e.entity_type == EntityType.ROLE)
     comp_entity = next(e for e in candidates.entities if e.entity_type == EntityType.COMPANY)
 
-    rel = next(r for r in candidates.relationships if r.relationship_type == RelationshipType.HELD_ROLE)
-    assert rel.source_entity_id == role_entity.id, "HELD_ROLE source must be ROLE"
-    assert rel.target_entity_id == comp_entity.id, "HELD_ROLE target must be COMPANY"
+    rel = next(r for r in candidates.relationships if r.relationship_type == RelationshipType.WORKED_AT)
+    assert rel.source_entity_id == role_entity.id, "WORKED_AT source must be ROLE"
+    assert rel.target_entity_id == comp_entity.id, "WORKED_AT target must be COMPANY"
 
 
 def test_studied_at_direction_education_list() -> None:
@@ -517,7 +517,7 @@ def test_extraction_id_none_provenance() -> None:
 
 
 def test_portfolio_work_experience_mapping() -> None:
-    """Verifies Portfolio work_experience key maps correctly to ROLE --[HELD_ROLE]--> COMPANY."""
+    """Verifies Portfolio work_experience key maps correctly to ROLE --[WORKED_AT]--> COMPANY."""
     user_id = uuid4()
     artifact_id = uuid4()
 
@@ -538,12 +538,12 @@ def test_portfolio_work_experience_mapping() -> None:
     mapper = ExtractionGraphMapper()
     candidates = mapper.map_extraction_to_graph(user_id, artifact_id, None, result)
 
-    held_role_rels = [r for r in candidates.relationships if r.relationship_type == RelationshipType.HELD_ROLE]
-    assert len(held_role_rels) == 2
+    worked_at_rels = [r for r in candidates.relationships if r.relationship_type == RelationshipType.WORKED_AT]
+    assert len(worked_at_rels) == 2
 
     company_ids = {e.id for e in candidates.entities if e.entity_type == EntityType.COMPANY}
     role_ids = {e.id for e in candidates.entities if e.entity_type == EntityType.ROLE}
 
-    for rel in held_role_rels:
-        assert rel.source_entity_id in role_ids, "HELD_ROLE source must be ROLE"
-        assert rel.target_entity_id in company_ids, "HELD_ROLE target must be COMPANY"
+    for rel in worked_at_rels:
+        assert rel.source_entity_id in role_ids, "WORKED_AT source must be ROLE"
+        assert rel.target_entity_id in company_ids, "WORKED_AT target must be COMPANY"

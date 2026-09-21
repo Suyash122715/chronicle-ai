@@ -82,6 +82,15 @@ async def async_client_with_overrides(async_client: AsyncClient) -> AsyncClient:
     with tempfile.TemporaryDirectory() as tmpdir:
         storage = LocalStorageService(storage_dir=tmpdir)
 
+        from unittest.mock import AsyncMock, MagicMock
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from app.dependencies import get_db_session
+
+        mock_session = AsyncMock(spec=AsyncSession)
+        async def _mock_get_db_session():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = _mock_get_db_session
         app.dependency_overrides[get_user_repository] = lambda: user_repo
         app.dependency_overrides[get_artifact_repository] = lambda: artifact_repo
         app.dependency_overrides[get_storage_service] = lambda: storage

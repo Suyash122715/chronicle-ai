@@ -196,7 +196,7 @@ async def test_e2e_knowledge_graph_pipeline_persists_nodes_edges_and_provenance(
     relationships = rel_result.scalars().all()
     assert len(relationships) > 0
     rel_types = {r.relationship_type for r in relationships}
-    assert "HELD_ROLE" in rel_types
+    assert "WORKED_AT" in rel_types
 
     # 5. Verify Entity Artifact Provenance in DB
     ent_prov_stmt = select(EntityArtifactProvenanceModel).where(

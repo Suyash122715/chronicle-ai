@@ -21,6 +21,7 @@ from app.domain.entities.user import User
 from app.domain.interfaces.artifact_repository import ArtifactRepositoryInterface
 from app.domain.interfaces.knowledge_graph_repository import KnowledgeGraphRepositoryInterface
 from app.domain.interfaces.user_repository import UserRepositoryInterface
+from app.domain.career_intelligence.skill_metric_profile import SkillMetricProfile
 from app.domain.value_objects.entity_type import EntityType
 from app.domain.value_objects.graph_provenance import GraphProvenance
 from app.domain.value_objects.relationship_type import RelationshipType
@@ -218,6 +219,79 @@ class InMemoryKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             for rid in relationship_ids
             if rid in user_rel_ids
         }
+
+    async def get_skill_metric_profiles(
+        self, user_id: uuid.UUID
+    ) -> list[SkillMetricProfile]:
+        from app.domain.career_intelligence.skill_metric_profile import SkillMetricProfile
+        profiles = []
+        for e in self.entities.values():
+            if e.user_id == user_id and e.entity_type in (EntityType.SKILL, EntityType.TECHNOLOGY):
+                prov_count = len(
+                    {p.artifact_id for p in self.entity_provenance.get(e.id, [])}
+                )
+                proj_count = len(
+                    {
+                        r.source_entity_id
+                        for r in self.relationships.values()
+                        if r.target_entity_id == e.id
+                        and r.relationship_type == RelationshipType.USES
+                        and self.entities.get(r.source_entity_id, None) is not None
+                        and self.entities[r.source_entity_id].entity_type == EntityType.PROJECT
+                    }
+                )
+                exp_count = len(
+                    {
+                        r.source_entity_id
+                        for r in self.relationships.values()
+                        if r.target_entity_id == e.id
+                        and r.relationship_type == RelationshipType.USES
+                        and self.entities.get(r.source_entity_id, None) is not None
+                        and self.entities[r.source_entity_id].entity_type == EntityType.ROLE
+                    }
+                )
+                cert_count = len(
+                    {
+                        r.source_entity_id
+                        for r in self.relationships.values()
+                        if r.target_entity_id == e.id
+                        and r.relationship_type == RelationshipType.CERTIFIED_IN
+                        and self.entities.get(r.source_entity_id, None) is not None
+                        and self.entities[r.source_entity_id].entity_type == EntityType.CERTIFICATE
+                    }
+                )
+                profiles.append(
+                    SkillMetricProfile(
+                        entity_id=e.id,
+                        canonical_name=e.canonical_name,
+                        entity_type=e.entity_type,
+                        frequency=prov_count,
+                        project_count=proj_count,
+                        experience_count=exp_count,
+                        certificate_count=cert_count,
+                    )
+                )
+        return profiles
+
+    async def rebuild_artifact_graph(
+        self,
+        user_id: uuid.UUID,
+        artifact_id: uuid.UUID,
+        fresh_entities: list[GraphEntity],
+        fresh_relationships: list[GraphRelationship],
+        entity_provenance: dict[uuid.UUID, GraphProvenance] | None = None,
+        relationship_provenance: dict[uuid.UUID, GraphProvenance] | None = None,
+    ) -> tuple[list[GraphEntity], list[GraphRelationship]]:
+        return await self.persist_graph(
+            entities=fresh_entities,
+            relationships=fresh_relationships,
+            entity_provenance=entity_provenance,
+            relationship_provenance=relationship_provenance,
+        )
+
+    async def rebuild_user_graph(self, user_id: uuid.UUID) -> None:
+        pass
+
 
 
 @pytest.fixture

@@ -3,9 +3,10 @@
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.career_intelligence.skill_metric_profile import SkillMetricProfile
 from app.domain.entities.graph_entity import GraphEntity, canonicalize_name
 from app.domain.entities.graph_relationship import GraphRelationship
 from app.domain.exceptions.graph_exceptions import GraphEntityNotFoundError
@@ -389,13 +390,15 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             self._session.add(model)
             await self._session.flush()
         else:
-            # Re-use existing database entity: merge properties, update name and updated_at
-            merged_properties = dict(model.properties or {})
+            # Earliest-insertion-wins property reconciliation:
+            # Only add NEW keys from the incoming entity; never overwrite existing keys.
+            existing_props = dict(model.properties or {})
             if entity.properties:
-                merged_properties.update(entity.properties)
-            model.properties = merged_properties
-            if entity.name:
-                model.name = entity.name
+                for k, v in entity.properties.items():
+                    if k not in existing_props:
+                        existing_props[k] = v
+            model.properties = existing_props
+            # canonical_name and entity_type are immutable; name is set on first insertion only.
             model.updated_at = now
             await self._session.flush()
 
@@ -445,12 +448,16 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             self._session.add(model)
             await self._session.flush()
         else:
-            # Re-use existing database relationship: merge properties, update weight and updated_at
-            merged_properties = dict(model.properties or {})
+            # Relationship reconciliation:
+            # weight = max(existing_weight, incoming_weight) — strongest evidence wins.
+            # properties: earliest-wins on key collision (new keys only).
+            existing_props = dict(model.properties or {})
             if properties:
-                merged_properties.update(properties)
-            model.properties = merged_properties
-            model.weight = weight
+                for k, v in properties.items():
+                    if k not in existing_props:
+                        existing_props[k] = v
+            model.properties = existing_props
+            model.weight = max(model.weight, weight)
             model.updated_at = now
             await self._session.flush()
 
@@ -549,3 +556,248 @@ class SQLAlchemyKnowledgeGraphRepository(KnowledgeGraphRepositoryInterface):
             raise GraphEntityNotFoundError(
                 f"Target entity {target_id} not found or does not belong to user {user_id}."
             )
+
+    # -------------------------------------------------------------------------
+    # Career Intelligence: metric aggregation
+    # -------------------------------------------------------------------------
+
+    async def get_skill_metric_profiles(
+        self, user_id: UUID
+    ) -> list[SkillMetricProfile]:
+        """Aggregates Career Intelligence metrics for all SKILL and TECHNOLOGY entities of a user.
+
+        experience_count counts only ROLE source entities via USES edges (COMPANY excluded by
+        the entity_type filter in the subquery).
+        """
+        # Retrieve all SKILL and TECHNOLOGY entities for the user
+        stmt_entities = select(GraphEntityModel).where(
+            GraphEntityModel.user_id == user_id,
+            GraphEntityModel.entity_type.in_([EntityType.SKILL.value, EntityType.TECHNOLOGY.value]),
+        )
+        res = await self._session.execute(stmt_entities)
+        entity_models = res.scalars().all()
+
+        if not entity_models:
+            return []
+
+        entity_ids = [e.id for e in entity_models]
+
+        # --- frequency: COUNT(DISTINCT artifact_id) per entity ---
+        freq_stmt = (
+            select(
+                EntityArtifactProvenanceModel.entity_id,
+                func.count(EntityArtifactProvenanceModel.artifact_id.distinct()).label("frequency"),
+            )
+            .where(EntityArtifactProvenanceModel.entity_id.in_(entity_ids))
+            .group_by(EntityArtifactProvenanceModel.entity_id)
+        )
+        freq_res = await self._session.execute(freq_stmt)
+        frequency_map: dict[UUID, int] = {row.entity_id: row.frequency for row in freq_res}
+
+        # --- project_count: COUNT(DISTINCT source_entity_id) of USES edges where source is PROJECT ---
+        project_stmt = (
+            select(
+                GraphRelationshipModel.target_entity_id,
+                func.count(GraphRelationshipModel.source_entity_id.distinct()).label("project_count"),
+            )
+            .join(
+                GraphEntityModel,
+                GraphEntityModel.id == GraphRelationshipModel.source_entity_id,
+            )
+            .where(
+                GraphRelationshipModel.target_entity_id.in_(entity_ids),
+                GraphRelationshipModel.relationship_type == RelationshipType.USES.value,
+                GraphEntityModel.entity_type == EntityType.PROJECT.value,
+                GraphRelationshipModel.user_id == user_id,
+            )
+            .group_by(GraphRelationshipModel.target_entity_id)
+        )
+        project_res = await self._session.execute(project_stmt)
+        project_map: dict[UUID, int] = {
+            row.target_entity_id: row.project_count for row in project_res
+        }
+
+        # --- experience_count: COUNT(DISTINCT source_entity_id) of USES edges where source is ROLE ---
+        # COMPANY nodes are explicitly excluded by the entity_type == 'ROLE' filter.
+        experience_stmt = (
+            select(
+                GraphRelationshipModel.target_entity_id,
+                func.count(GraphRelationshipModel.source_entity_id.distinct()).label("experience_count"),
+            )
+            .join(
+                GraphEntityModel,
+                GraphEntityModel.id == GraphRelationshipModel.source_entity_id,
+            )
+            .where(
+                GraphRelationshipModel.target_entity_id.in_(entity_ids),
+                GraphRelationshipModel.relationship_type == RelationshipType.USES.value,
+                GraphEntityModel.entity_type == EntityType.ROLE.value,  # ROLE only, not COMPANY
+                GraphRelationshipModel.user_id == user_id,
+            )
+            .group_by(GraphRelationshipModel.target_entity_id)
+        )
+        experience_res = await self._session.execute(experience_stmt)
+        experience_map: dict[UUID, int] = {
+            row.target_entity_id: row.experience_count for row in experience_res
+        }
+
+        # --- certificate_count: COUNT(DISTINCT source_entity_id) of CERTIFIED_IN edges where source is CERTIFICATE ---
+        cert_stmt = (
+            select(
+                GraphRelationshipModel.target_entity_id,
+                func.count(GraphRelationshipModel.source_entity_id.distinct()).label("certificate_count"),
+            )
+            .join(
+                GraphEntityModel,
+                GraphEntityModel.id == GraphRelationshipModel.source_entity_id,
+            )
+            .where(
+                GraphRelationshipModel.target_entity_id.in_(entity_ids),
+                GraphRelationshipModel.relationship_type == RelationshipType.CERTIFIED_IN.value,
+                GraphEntityModel.entity_type == EntityType.CERTIFICATE.value,
+                GraphRelationshipModel.user_id == user_id,
+            )
+            .group_by(GraphRelationshipModel.target_entity_id)
+        )
+        cert_res = await self._session.execute(cert_stmt)
+        cert_map: dict[UUID, int] = {
+            row.target_entity_id: row.certificate_count for row in cert_res
+        }
+
+        # Build profiles
+        profiles: list[SkillMetricProfile] = []
+        for model in entity_models:
+            entity_type = EntityType.from_string(model.entity_type)
+            profiles.append(
+                SkillMetricProfile(
+                    entity_id=model.id,
+                    canonical_name=model.canonical_name,
+                    entity_type=entity_type,
+                    frequency=frequency_map.get(model.id, 0),
+                    project_count=project_map.get(model.id, 0),
+                    experience_count=experience_map.get(model.id, 0),
+                    certificate_count=cert_map.get(model.id, 0),
+                )
+            )
+        return profiles
+
+    # -------------------------------------------------------------------------
+    # Idempotent graph rebuild
+    # -------------------------------------------------------------------------
+
+    async def rebuild_artifact_graph(
+        self,
+        user_id: UUID,
+        artifact_id: UUID,
+        fresh_entities: list[GraphEntity],
+        fresh_relationships: list[GraphRelationship],
+        entity_provenance: dict[UUID, GraphProvenance] | None = None,
+        relationship_provenance: dict[UUID, GraphProvenance] | None = None,
+    ) -> tuple[list[GraphEntity], list[GraphRelationship]]:
+        """Atomically rebuilds the graph contribution of a single artifact (8-step algorithm).
+
+        See KnowledgeGraphRepositoryInterface.rebuild_artifact_graph() for the full spec.
+        """
+        async with self._session.begin_nested():
+            # Step 2: Identify entity_ids and relationship_ids supported by this artifact
+            ent_prov_stmt = select(EntityArtifactProvenanceModel.entity_id).where(
+                EntityArtifactProvenanceModel.artifact_id == artifact_id
+            )
+            ent_prov_res = await self._session.execute(ent_prov_stmt)
+            prev_entity_ids = set(ent_prov_res.scalars().all())
+
+            rel_prov_stmt = select(RelationshipArtifactProvenanceModel.relationship_id).where(
+                RelationshipArtifactProvenanceModel.artifact_id == artifact_id
+            )
+            rel_prov_res = await self._session.execute(rel_prov_stmt)
+            prev_relationship_ids = set(rel_prov_res.scalars().all())
+
+            # Step 3: Delete entity provenance for this artifact
+            await self._session.execute(
+                delete(EntityArtifactProvenanceModel).where(
+                    EntityArtifactProvenanceModel.artifact_id == artifact_id
+                )
+            )
+
+            # Step 4: Delete relationship provenance for this artifact
+            await self._session.execute(
+                delete(RelationshipArtifactProvenanceModel).where(
+                    RelationshipArtifactProvenanceModel.artifact_id == artifact_id
+                )
+            )
+
+            await self._session.flush()
+
+            # Step 5: Prune orphaned relationships (zero remaining provenance)
+            if prev_relationship_ids:
+                orphan_rel_stmt = select(GraphRelationshipModel.id).where(
+                    GraphRelationshipModel.id.in_(prev_relationship_ids),
+                    GraphRelationshipModel.user_id == user_id,
+                    ~GraphRelationshipModel.id.in_(
+                        select(RelationshipArtifactProvenanceModel.relationship_id)
+                    ),
+                )
+                orphan_rel_res = await self._session.execute(orphan_rel_stmt)
+                orphan_rel_ids = list(orphan_rel_res.scalars().all())
+                if orphan_rel_ids:
+                    await self._session.execute(
+                        delete(GraphRelationshipModel).where(
+                            GraphRelationshipModel.id.in_(orphan_rel_ids)
+                        )
+                    )
+                    await self._session.flush()
+
+            # Step 6: Prune orphaned entities (zero remaining provenance AND zero connected edges)
+            if prev_entity_ids:
+                # Entities that are still connected as source or target in any remaining relationship
+                connected_src = select(GraphRelationshipModel.source_entity_id).where(
+                    GraphRelationshipModel.user_id == user_id
+                )
+                connected_tgt = select(GraphRelationshipModel.target_entity_id).where(
+                    GraphRelationshipModel.user_id == user_id
+                )
+
+                orphan_ent_stmt = select(GraphEntityModel.id).where(
+                    GraphEntityModel.id.in_(prev_entity_ids),
+                    GraphEntityModel.user_id == user_id,
+                    ~GraphEntityModel.id.in_(
+                        select(EntityArtifactProvenanceModel.entity_id)
+                    ),
+                    ~GraphEntityModel.id.in_(connected_src),
+                    ~GraphEntityModel.id.in_(connected_tgt),
+                )
+                orphan_ent_res = await self._session.execute(orphan_ent_stmt)
+                orphan_ent_ids = list(orphan_ent_res.scalars().all())
+                if orphan_ent_ids:
+                    await self._session.execute(
+                        delete(GraphEntityModel).where(
+                            GraphEntityModel.id.in_(orphan_ent_ids)
+                        )
+                    )
+                    await self._session.flush()
+
+            # Step 7: Upsert fresh entities and relationships with reconciliation
+            return await self.persist_graph(
+                entities=fresh_entities,
+                relationships=fresh_relationships,
+                entity_provenance=entity_provenance,
+                relationship_provenance=relationship_provenance,
+            )
+
+    async def rebuild_user_graph(self, user_id: UUID) -> None:
+        """Full user-scoped graph rebuild: replays all valid artifact extractions in ascending
+        created_at order. Relies on the ExtractionRepository to supply ordered extractions;
+        this method itself only orchestrates the rebuild sequence.
+
+        NOTE: The orchestration of fetching ordered extractions and invoking rebuild_artifact_graph()
+        for each must be performed by the calling use case (e.g., RebuildUserGraphUseCase).
+        This method is a stub signalling the interface contract; the full orchestration is a
+        use-case concern that requires access to both the extraction repository and the graph mapper.
+        """
+        # The actual implementation that coordinates multiple repositories belongs in a use case.
+        # This stub satisfies the ABC contract; the use case layer will call rebuild_artifact_graph
+        # per artifact in ascending created_at order.
+        raise NotImplementedError(
+            "rebuild_user_graph() orchestration must be performed by RebuildUserGraphUseCase, "
+            "which coordinates ExtractionRepository + ExtractionGraphMapper + this repository."
+        )

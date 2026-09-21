@@ -1,4 +1,25 @@
-"""ExtractionGraphMapper — deterministic mapper converting ExtractionResult into Knowledge Graph candidates."""
+"""ExtractionGraphMapper — deterministic mapper converting ExtractionResult into Knowledge Graph candidates.
+
+Permitted relationship semantics (V1 authoritative):
+    ROLE        → USES        → SKILL / TECHNOLOGY   (explicit in extraction)
+    ROLE        → WORKED_AT   → COMPANY               (explicit in extraction)
+    PROJECT     → USES        → SKILL / TECHNOLOGY   (explicit in extraction)
+    PROJECT     → RELATED_TO  → ROLE                 (ONLY when extraction explicitly associates them)
+    CERTIFICATE → CERTIFIED_IN → SKILL / TECHNOLOGY  (explicit in extraction)
+    CERTIFICATE → ISSUED_BY   → INSTITUTION / COMPANY (explicit in extraction)
+
+Prohibited relationships (must never be created):
+    COMPANY     → USES        → SKILL / TECHNOLOGY   (not a valid extraction relationship)
+    Any cross-type SKILL ↔ TECHNOLOGY merge at graph layer
+
+SKILL vs TECHNOLOGY classification:
+    Always delegated to the extraction's `category` field.
+    If `category` == "skill"       → EntityType.SKILL
+    If `category` == "technology"  → EntityType.TECHNOLOGY
+    Items without a category field default to EntityType.SKILL for top-level skills lists
+    and EntityType.TECHNOLOGY for technology/language lists unless overridden by category.
+    An unrecognised explicit category string raises ValueError via _category_to_entity_type().
+"""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +31,44 @@ from app.domain.value_objects.entity_type import EntityType
 from app.domain.value_objects.extraction_result import ExtractionResult, ExtractionStatus
 from app.domain.value_objects.graph_provenance import GraphProvenance
 from app.domain.value_objects.relationship_type import RelationshipType
+
+# Recognised category strings that map to SKILL or TECHNOLOGY.
+# All comparisons are case-insensitive after normalisation.
+_SKILL_CATEGORIES: frozenset[str] = frozenset(
+    {"skill", "skills", "soft skill", "soft_skill", "hard skill", "hard_skill", "competency"}
+)
+_TECHNOLOGY_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "technology", "technologies", "tech", "tool", "tools", "framework", "frameworks",
+        "library", "libraries", "language", "languages", "platform", "platforms",
+        "database", "databases", "infrastructure",
+    }
+)
+
+
+def _category_to_entity_type(category: str) -> EntityType:
+    """Maps an extraction category string to EntityType.SKILL or EntityType.TECHNOLOGY.
+
+    Args:
+        category: Raw category string from the extraction (e.g. "skill", "technology").
+
+    Returns:
+        EntityType.SKILL or EntityType.TECHNOLOGY.
+
+    Raises:
+        ValueError: If the category string is non-empty and not recognised.
+            Empty/None categories are handled by callers with a context-appropriate default.
+    """
+    normalised = category.strip().lower()
+    if normalised in _SKILL_CATEGORIES:
+        return EntityType.SKILL
+    if normalised in _TECHNOLOGY_CATEGORIES:
+        return EntityType.TECHNOLOGY
+    raise ValueError(
+        f"Unrecognised extraction category '{category}'. "
+        f"Recognised skill categories: {sorted(_SKILL_CATEGORIES)}. "
+        f"Recognised technology categories: {sorted(_TECHNOLOGY_CATEGORIES)}."
+    )
 
 
 @dataclass
@@ -23,7 +82,11 @@ class GraphCandidates:
 
 
 class ExtractionGraphMapper:
-    """Pure domain/application mapper that deterministically transforms ExtractionResult structured data into Knowledge Graph entities and relationships."""
+    """Pure domain/application mapper that deterministically transforms ExtractionResult structured data
+    into Knowledge Graph entities and relationships.
+
+    See module docstring for the authoritative permitted/prohibited relationship semantics.
+    """
 
     def map_extraction_to_graph(
         self,
@@ -32,9 +95,11 @@ class ExtractionGraphMapper:
         extraction_id: UUID | None,
         extraction_result: ExtractionResult,
     ) -> GraphCandidates:
-        """Transforms an ExtractionResult into deduplicated GraphEntity, GraphRelationship, and GraphProvenance candidates.
+        """Transforms an ExtractionResult into deduplicated GraphEntity, GraphRelationship, and
+        GraphProvenance candidates.
 
-        Returns an empty GraphCandidates object if extraction status is FAILED, NOT_SUPPORTED, or SKIPPED.
+        Returns an empty GraphCandidates object if extraction status is FAILED, NOT_SUPPORTED,
+        or SKIPPED.
         """
         if extraction_result.status in (
             ExtractionStatus.FAILED,
@@ -136,30 +201,64 @@ class ExtractionGraphMapper:
                 extraction_method="LLM_EXTRACTION",
             )
 
+        def resolve_skill_or_technology(
+            item: Any,
+            default_type: EntityType,
+            idx: int,
+            context_prefix: str,
+        ) -> tuple[str | None, EntityType]:
+            """Extracts the name and entity type from a skill/technology item.
+
+            Args:
+                item: Raw item from extraction (str or dict).
+                default_type: Default EntityType when no category is present.
+                idx: Index in parent list (for source_loc).
+                context_prefix: Source location prefix string.
+
+            Returns:
+                Tuple of (name_or_None, resolved_entity_type).
+            """
+            if isinstance(item, str):
+                return item, default_type
+            elif isinstance(item, dict):
+                name = item.get("name") or item.get("skill") or item.get("technology")
+                raw_category = str(item.get("category", "")).strip()
+                if raw_category:
+                    try:
+                        entity_type = _category_to_entity_type(raw_category)
+                    except ValueError:
+                        # Unrecognised category — re-raise to surface the error
+                        raise
+                else:
+                    entity_type = default_type
+                return name, entity_type
+            return None, default_type
+
         # -------------------------------------------------------------
-        # 1. SKILLS (Common across Resume, Certificate, Internship, Project, Portfolio)
+        # 1. TOP-LEVEL SKILLS (Common across Resume, Certificate, Internship, Project, Portfolio)
+        #    Default entity type: SKILL (these lists are labelled "skills" by extractors)
+        #    Category field overrides the default when present.
         # -------------------------------------------------------------
         skills_raw = data.get("skills", [])
         if isinstance(skills_raw, list):
             for idx, item in enumerate(skills_raw):
-                skill_name = None
-                category = ""
-                if isinstance(item, str):
-                    skill_name = item
-                elif isinstance(item, dict):
-                    skill_name = item.get("name") or item.get("skill")
-                    category = str(item.get("category", ""))
-
-                if skill_name:
+                name, entity_type = resolve_skill_or_technology(
+                    item, EntityType.SKILL, idx, "skills"
+                )
+                if name:
+                    raw_cat = str(item.get("category", "")).strip() if isinstance(item, dict) else ""
                     get_or_create_entity(
-                        EntityType.SKILL,
-                        skill_name,
-                        properties={"category": category} if category else {},
+                        entity_type,
+                        name,
+                        properties={"category": raw_cat} if raw_cat else {},
                         source_loc=f"skills[{idx}]",
                     )
 
         # -------------------------------------------------------------
         # 2. WORK EXPERIENCE / INTERNSHIPS (Company & Role)
+        #    Permitted: ROLE → WORKED_AT → COMPANY
+        #    Permitted: ROLE → USES → SKILL / TECHNOLOGY  (from experience-level skill lists)
+        #    Prohibited: COMPANY → USES → SKILL / TECHNOLOGY
         # -------------------------------------------------------------
         exp_raw = data.get("experience") or data.get("work_experience") or []
         if isinstance(exp_raw, list):
@@ -175,13 +274,47 @@ class ExtractionGraphMapper:
                         EntityType.ROLE, role_name, source_loc=f"experience[{idx}].role"
                     )
 
+                    # ROLE → WORKED_AT → COMPANY
                     if comp_entity and role_entity:
                         add_relationship(
                             role_entity,
                             comp_entity,
-                            RelationshipType.HELD_ROLE,
+                            RelationshipType.WORKED_AT,
                             source_loc=f"experience[{idx}]",
                         )
+
+                    # ROLE → USES → SKILL / TECHNOLOGY (from experience-level skill list)
+                    if role_entity:
+                        exp_skills = exp.get("skills") or exp.get("technologies") or []
+                        if isinstance(exp_skills, list):
+                            for s_idx, s_item in enumerate(exp_skills):
+                                s_name, s_type = resolve_skill_or_technology(
+                                    s_item, EntityType.SKILL, s_idx,
+                                    f"experience[{idx}].skills"
+                                )
+                                if s_name:
+                                    raw_cat = (
+                                        str(s_item.get("category", "")).strip()
+                                        if isinstance(s_item, dict) else ""
+                                    )
+                                    skill_ent = get_or_create_entity(
+                                        s_type,
+                                        s_name,
+                                        properties={"category": raw_cat} if raw_cat else {},
+                                        source_loc=f"experience[{idx}].skills[{s_idx}]",
+                                    )
+                                    if skill_ent:
+                                        add_relationship(
+                                            role_entity,
+                                            skill_ent,
+                                            RelationshipType.USES,
+                                            source_loc=f"experience[{idx}]",
+                                        )
+
+                    # PROJECT → RELATED_TO → ROLE: only if extraction explicitly provides
+                    # a `role_ref` or `related_role` field on the experience entry.
+                    # Never inferred from shared skills, chronology, or proximity.
+                    # (No automatic PROJECT → RELATED_TO → ROLE from experience entries.)
 
         # Internship Info object
         internship_info = data.get("internship_info")
@@ -194,16 +327,46 @@ class ExtractionGraphMapper:
             role_entity = get_or_create_entity(
                 EntityType.ROLE, role_name, source_loc="internship_info.role"
             )
+            # ROLE → WORKED_AT → COMPANY
             if comp_entity and role_entity:
                 add_relationship(
                     role_entity,
                     comp_entity,
-                    RelationshipType.HELD_ROLE,
+                    RelationshipType.WORKED_AT,
                     source_loc="internship_info",
                 )
+            # ROLE → USES → SKILL / TECHNOLOGY from internship skill list
+            if role_entity:
+                intern_skills = internship_info.get("skills") or []
+                if isinstance(intern_skills, list):
+                    for s_idx, s_item in enumerate(intern_skills):
+                        s_name, s_type = resolve_skill_or_technology(
+                            s_item, EntityType.SKILL, s_idx, "internship_info.skills"
+                        )
+                        if s_name:
+                            raw_cat = (
+                                str(s_item.get("category", "")).strip()
+                                if isinstance(s_item, dict) else ""
+                            )
+                            skill_ent = get_or_create_entity(
+                                s_type,
+                                s_name,
+                                properties={"category": raw_cat} if raw_cat else {},
+                                source_loc=f"internship_info.skills[{s_idx}]",
+                            )
+                            if skill_ent:
+                                add_relationship(
+                                    role_entity,
+                                    skill_ent,
+                                    RelationshipType.USES,
+                                    source_loc="internship_info",
+                                )
 
         # -------------------------------------------------------------
         # 3. PROJECTS & TECHNOLOGIES
+        #    Permitted: PROJECT → USES → SKILL / TECHNOLOGY
+        #    Permitted: PROJECT → RELATED_TO → ROLE  (ONLY when extraction explicitly provides it)
+        #    Default entity type for project technology lists: TECHNOLOGY
         # -------------------------------------------------------------
         projects_raw = data.get("projects") or []
         if isinstance(projects_raw, list):
@@ -218,28 +381,52 @@ class ExtractionGraphMapper:
                         source_loc=f"projects[{idx}].title",
                     )
                     if proj_entity:
-                        # Project technologies
+                        # PROJECT → USES → SKILL / TECHNOLOGY
                         techs = proj.get("technologies") or proj.get("technologies_used") or []
                         if isinstance(techs, list):
                             for t_idx, tech_item in enumerate(techs):
-                                if isinstance(tech_item, str):
-                                    tech_name = tech_item
-                                elif isinstance(tech_item, dict):
-                                    tech_name = tech_item.get("name")
-                                else:
-                                    tech_name = None
-                                tech_entity = get_or_create_entity(
-                                    EntityType.TECHNOLOGY,
-                                    tech_name,
-                                    source_loc=f"projects[{idx}].technologies[{t_idx}]",
+                                t_name, t_type = resolve_skill_or_technology(
+                                    tech_item, EntityType.TECHNOLOGY, t_idx,
+                                    f"projects[{idx}].technologies"
                                 )
-                                if tech_entity:
-                                    add_relationship(
-                                        proj_entity,
-                                        tech_entity,
-                                        RelationshipType.USES,
-                                        source_loc=f"projects[{idx}]",
+                                if t_name:
+                                    raw_cat = (
+                                        str(tech_item.get("category", "")).strip()
+                                        if isinstance(tech_item, dict) else ""
                                     )
+                                    tech_ent = get_or_create_entity(
+                                        t_type,
+                                        t_name,
+                                        properties={"category": raw_cat} if raw_cat else {},
+                                        source_loc=f"projects[{idx}].technologies[{t_idx}]",
+                                    )
+                                    if tech_ent:
+                                        add_relationship(
+                                            proj_entity,
+                                            tech_ent,
+                                            RelationshipType.USES,
+                                            source_loc=f"projects[{idx}]",
+                                        )
+
+                        # PROJECT → RELATED_TO → ROLE: ONLY when extraction explicitly provides
+                        # a `role_ref`, `related_role`, or `role_id` field on the project entry.
+                        # Never inferred from shared technologies, chronology, same company, or proximity.
+                        explicit_role_ref = (
+                            proj.get("role_ref") or proj.get("related_role") or proj.get("role_id")
+                        )
+                        if explicit_role_ref:
+                            role_entity = get_or_create_entity(
+                                EntityType.ROLE,
+                                explicit_role_ref if isinstance(explicit_role_ref, str) else None,
+                                source_loc=f"projects[{idx}].role_ref",
+                            )
+                            if role_entity:
+                                add_relationship(
+                                    proj_entity,
+                                    role_entity,
+                                    RelationshipType.RELATED_TO,
+                                    source_loc=f"projects[{idx}]",
+                                )
 
         # Project Info object (Project Report Extractor)
         project_info = data.get("project_info")
@@ -253,30 +440,33 @@ class ExtractionGraphMapper:
                 source_loc="project_info.title",
             )
             if proj_entity:
-                # Technologies list
+                # Technologies list — default TECHNOLOGY
                 techs = data.get("technologies", [])
                 if isinstance(techs, list):
                     for t_idx, tech_item in enumerate(techs):
-                        if isinstance(tech_item, str):
-                            tech_name = tech_item
-                        elif isinstance(tech_item, dict):
-                            tech_name = tech_item.get("name")
-                        else:
-                            tech_name = None
-                        tech_entity = get_or_create_entity(
-                            EntityType.TECHNOLOGY,
-                            tech_name,
-                            source_loc=f"technologies[{t_idx}]",
+                        t_name, t_type = resolve_skill_or_technology(
+                            tech_item, EntityType.TECHNOLOGY, t_idx, "technologies"
                         )
-                        if tech_entity:
-                            add_relationship(
-                                proj_entity,
-                                tech_entity,
-                                RelationshipType.USES,
-                                source_loc="project_info",
+                        if t_name:
+                            raw_cat = (
+                                str(tech_item.get("category", "")).strip()
+                                if isinstance(tech_item, dict) else ""
                             )
+                            tech_ent = get_or_create_entity(
+                                t_type,
+                                t_name,
+                                properties={"category": raw_cat} if raw_cat else {},
+                                source_loc=f"technologies[{t_idx}]",
+                            )
+                            if tech_ent:
+                                add_relationship(
+                                    proj_entity,
+                                    tech_ent,
+                                    RelationshipType.USES,
+                                    source_loc="project_info",
+                                )
 
-                # Outcomes -> Achievements
+                # Outcomes → Achievements
                 outcomes = data.get("outcomes", [])
                 if isinstance(outcomes, list):
                     for o_idx, outcome in enumerate(outcomes):
@@ -296,6 +486,7 @@ class ExtractionGraphMapper:
 
         # -------------------------------------------------------------
         # 4. GITHUB REPOSITORY EXTRACTOR
+        #    Languages default to TECHNOLOGY entity type.
         # -------------------------------------------------------------
         repo_info = data.get("repository_info")
         if isinstance(repo_info, dict):
@@ -309,31 +500,36 @@ class ExtractionGraphMapper:
                 source_loc="repository_info.name",
             )
             if proj_entity:
-                # Languages -> Technology
+                # Languages → Technology (default TECHNOLOGY)
                 langs = data.get("languages", [])
                 if isinstance(langs, list):
                     for l_idx, lang_item in enumerate(langs):
-                        if isinstance(lang_item, str):
-                            lang_name = lang_item
-                        elif isinstance(lang_item, dict):
-                            lang_name = lang_item.get("name")
-                        else:
-                            lang_name = None
-                        tech_entity = get_or_create_entity(
-                            EntityType.TECHNOLOGY,
-                            lang_name,
-                            source_loc=f"languages[{l_idx}]",
+                        l_name, l_type = resolve_skill_or_technology(
+                            lang_item, EntityType.TECHNOLOGY, l_idx, "languages"
                         )
-                        if tech_entity:
-                            add_relationship(
-                                proj_entity,
-                                tech_entity,
-                                RelationshipType.USES,
-                                source_loc="repository_info",
+                        if l_name:
+                            raw_cat = (
+                                str(lang_item.get("category", "")).strip()
+                                if isinstance(lang_item, dict) else ""
                             )
+                            tech_ent = get_or_create_entity(
+                                l_type,
+                                l_name,
+                                properties={"category": raw_cat} if raw_cat else {},
+                                source_loc=f"languages[{l_idx}]",
+                            )
+                            if tech_ent:
+                                add_relationship(
+                                    proj_entity,
+                                    tech_ent,
+                                    RelationshipType.USES,
+                                    source_loc="repository_info",
+                                )
 
         # -------------------------------------------------------------
         # 5. CERTIFICATES & CERTIFICATIONS
+        #    Permitted: CERTIFICATE → CERTIFIED_IN → SKILL / TECHNOLOGY
+        #    Permitted: CERTIFICATE → ISSUED_BY    → INSTITUTION / COMPANY
         # -------------------------------------------------------------
         certs_raw = data.get("certifications") or []
         if isinstance(certs_raw, list):
@@ -341,38 +537,114 @@ class ExtractionGraphMapper:
                 if isinstance(cert, dict):
                     c_title = cert.get("title") or cert.get("name")
                     c_issuer = cert.get("issuer") or cert.get("organization")
+                    c_issuer_type = cert.get("issuer_type", "")
+
                     cert_entity = get_or_create_entity(
                         EntityType.CERTIFICATE, c_title, source_loc=f"certifications[{idx}].title"
                     )
-                    issuer_entity = get_or_create_entity(
-                        EntityType.COMPANY, c_issuer, source_loc=f"certifications[{idx}].issuer"
-                    )
-                    if cert_entity and issuer_entity:
-                        add_relationship(
-                            cert_entity,
-                            issuer_entity,
-                            RelationshipType.ISSUED_BY,
-                            source_loc=f"certifications[{idx}]",
+
+                    # CERTIFICATE → ISSUED_BY → INSTITUTION or COMPANY
+                    if cert_entity and c_issuer:
+                        # Use issuer_type field to determine entity type; default COMPANY
+                        issuer_entity_type = EntityType.COMPANY
+                        if isinstance(c_issuer_type, str):
+                            norm_it = c_issuer_type.strip().lower()
+                            if norm_it in {"institution", "university", "school", "college"}:
+                                issuer_entity_type = EntityType.INSTITUTION
+                        issuer_entity = get_or_create_entity(
+                            issuer_entity_type, c_issuer,
+                            source_loc=f"certifications[{idx}].issuer"
                         )
+                        if issuer_entity:
+                            add_relationship(
+                                cert_entity,
+                                issuer_entity,
+                                RelationshipType.ISSUED_BY,
+                                source_loc=f"certifications[{idx}]",
+                            )
+
+                    # CERTIFICATE → CERTIFIED_IN → SKILL / TECHNOLOGY
+                    if cert_entity:
+                        cert_skills = cert.get("skills") or cert.get("technologies") or []
+                        if isinstance(cert_skills, list):
+                            for s_idx, s_item in enumerate(cert_skills):
+                                s_name, s_type = resolve_skill_or_technology(
+                                    s_item, EntityType.SKILL, s_idx,
+                                    f"certifications[{idx}].skills"
+                                )
+                                if s_name:
+                                    raw_cat = (
+                                        str(s_item.get("category", "")).strip()
+                                        if isinstance(s_item, dict) else ""
+                                    )
+                                    skill_ent = get_or_create_entity(
+                                        s_type,
+                                        s_name,
+                                        properties={"category": raw_cat} if raw_cat else {},
+                                        source_loc=f"certifications[{idx}].skills[{s_idx}]",
+                                    )
+                                    if skill_ent:
+                                        add_relationship(
+                                            cert_entity,
+                                            skill_ent,
+                                            RelationshipType.CERTIFIED_IN,
+                                            source_loc=f"certifications[{idx}]",
+                                        )
 
         # Certificate Info object (Certificate Extractor)
         cert_info = data.get("certificate_info")
         if isinstance(cert_info, dict):
             c_title = cert_info.get("title")
             c_issuer = cert_info.get("issuer")
+            c_issuer_type = cert_info.get("issuer_type", "")
             cert_entity = get_or_create_entity(
                 EntityType.CERTIFICATE, c_title, source_loc="certificate_info.title"
             )
-            issuer_entity = get_or_create_entity(
-                EntityType.COMPANY, c_issuer, source_loc="certificate_info.issuer"
-            )
-            if cert_entity and issuer_entity:
-                add_relationship(
-                    cert_entity,
-                    issuer_entity,
-                    RelationshipType.ISSUED_BY,
-                    source_loc="certificate_info",
+
+            # CERTIFICATE → ISSUED_BY → INSTITUTION or COMPANY
+            if cert_entity and c_issuer:
+                issuer_entity_type = EntityType.COMPANY
+                if isinstance(c_issuer_type, str):
+                    norm_it = c_issuer_type.strip().lower()
+                    if norm_it in {"institution", "university", "school", "college"}:
+                        issuer_entity_type = EntityType.INSTITUTION
+                issuer_entity = get_or_create_entity(
+                    issuer_entity_type, c_issuer, source_loc="certificate_info.issuer"
                 )
+                if issuer_entity:
+                    add_relationship(
+                        cert_entity,
+                        issuer_entity,
+                        RelationshipType.ISSUED_BY,
+                        source_loc="certificate_info",
+                    )
+
+            # CERTIFICATE → CERTIFIED_IN → SKILL / TECHNOLOGY
+            if cert_entity:
+                cert_skills = cert_info.get("skills") or cert_info.get("technologies") or []
+                if isinstance(cert_skills, list):
+                    for s_idx, s_item in enumerate(cert_skills):
+                        s_name, s_type = resolve_skill_or_technology(
+                            s_item, EntityType.SKILL, s_idx, "certificate_info.skills"
+                        )
+                        if s_name:
+                            raw_cat = (
+                                str(s_item.get("category", "")).strip()
+                                if isinstance(s_item, dict) else ""
+                            )
+                            skill_ent = get_or_create_entity(
+                                s_type,
+                                s_name,
+                                properties={"category": raw_cat} if raw_cat else {},
+                                source_loc=f"certificate_info.skills[{s_idx}]",
+                            )
+                            if skill_ent:
+                                add_relationship(
+                                    cert_entity,
+                                    skill_ent,
+                                    RelationshipType.CERTIFIED_IN,
+                                    source_loc="certificate_info",
+                                )
 
         # -------------------------------------------------------------
         # 6. EDUCATION & INSTITUTIONS

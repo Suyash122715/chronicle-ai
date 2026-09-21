@@ -237,9 +237,9 @@ async def test_entity_properties_update_merge_behavior(db_session: AsyncSession)
     saved_updated = await repo.save_entity(reprocessed_entity)
 
     assert saved_updated.id == saved_initial.id
-    # "verified" is preserved from first, "level" is overwritten, "years_experience" is added
+    # "level": "Junior" and "verified": False are preserved from first insertion (earliest-wins), "years_experience" is added
     assert saved_updated.properties == {
-        "level": "Senior",
+        "level": "Junior",
         "verified": False,
         "years_experience": 5,
     }

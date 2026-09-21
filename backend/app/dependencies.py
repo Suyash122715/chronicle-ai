@@ -16,6 +16,8 @@ from app.application.artifacts.upload.upload_artifact_use_case import UploadArti
 from app.application.authentication.login.login_user_use_case import LoginUserUseCase
 from app.application.authentication.register.register_user_use_case import RegisterUserUseCase
 from app.application.jobs.process_artifact_job import ProcessArtifactJob
+from app.application.career_intelligence.get_career_insights_use_case import GetCareerInsightsUseCase
+from app.application.career_intelligence.get_skill_intelligence_use_case import GetSkillIntelligenceUseCase
 from app.application.knowledge_graph.build_knowledge_graph_use_case import BuildKnowledgeGraphUseCase
 from app.application.knowledge_graph.get.get_knowledge_graph_use_case import GetKnowledgeGraphUseCase
 from app.domain.entities.user import User
@@ -313,5 +315,23 @@ def get_get_knowledge_graph_use_case(
     return GetKnowledgeGraphUseCase(
         knowledge_graph_repository=knowledge_graph_repository,
         artifact_repository=artifact_repository,
+    )
+
+
+def get_skill_intelligence_use_case(
+    knowledge_graph_repository: KnowledgeGraphRepositoryInterface = Depends(get_knowledge_graph_repository),
+) -> GetSkillIntelligenceUseCase:
+    """Injects dependencies into GetSkillIntelligenceUseCase."""
+    return GetSkillIntelligenceUseCase(kg_repo=knowledge_graph_repository)
+
+
+def get_career_insights_use_case(
+    knowledge_graph_repository: KnowledgeGraphRepositoryInterface = Depends(get_knowledge_graph_repository),
+    skill_intelligence_use_case: GetSkillIntelligenceUseCase = Depends(get_skill_intelligence_use_case),
+) -> GetCareerInsightsUseCase:
+    """Injects dependencies into GetCareerInsightsUseCase."""
+    return GetCareerInsightsUseCase(
+        kg_repo=knowledge_graph_repository,
+        skill_intelligence_use_case=skill_intelligence_use_case,
     )
 

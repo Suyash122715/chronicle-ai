@@ -108,4 +108,34 @@ def test_get_get_knowledge_graph_use_case_wires_dependencies() -> None:
     assert use_case._artifact_repository is mock_artifact_repo
 
 
+def test_career_intelligence_dependency_providers() -> None:
+    """Verifies get_skill_intelligence_use_case and get_career_insights_use_case return wired instances."""
+    from app.application.career_intelligence.get_career_insights_use_case import GetCareerInsightsUseCase
+    from app.application.career_intelligence.get_skill_intelligence_use_case import GetSkillIntelligenceUseCase
+    from app.dependencies import get_career_insights_use_case, get_skill_intelligence_use_case
+
+    mock_kg_repo = MagicMock(spec=KnowledgeGraphRepositoryInterface)
+
+    skill_uc = get_skill_intelligence_use_case(knowledge_graph_repository=mock_kg_repo)
+    assert isinstance(skill_uc, GetSkillIntelligenceUseCase)
+    assert skill_uc._kg_repo is mock_kg_repo
+
+    insights_uc = get_career_insights_use_case(
+        knowledge_graph_repository=mock_kg_repo,
+        skill_intelligence_use_case=skill_uc,
+    )
+    assert isinstance(insights_uc, GetCareerInsightsUseCase)
+    assert insights_uc._kg_repo is mock_kg_repo
+
+
+def test_gap_analysis_use_case_not_present_in_v1() -> None:
+    """Verifies that GetSkillGapAnalysisUseCase is absent from V1."""
+    import app.application.career_intelligence as ci
+    import app.dependencies as deps
+
+    assert not hasattr(ci, "GetSkillGapAnalysisUseCase")
+    assert not hasattr(deps, "get_skill_gap_analysis_use_case")
+
+
+
 
